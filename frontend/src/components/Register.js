@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Container, Paper, TextField, Button, Typography, Box } from '@mui/material';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { getApiUrl, API_CONFIG } from '../config';
 
 const Register = () => {
   const [username, setUsername] = useState('');
@@ -21,10 +22,11 @@ const Register = () => {
     }
 
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/register', {
-        username,
-        password,
-      });
+      const response = await axios.post(
+        getApiUrl('api/register'),
+        { username, password },
+        API_CONFIG
+      );
       
       login(
         { userId: response.data.userId, username: response.data.username },

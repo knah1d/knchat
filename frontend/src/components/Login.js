@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Container, Paper, TextField, Button, Typography, Box } from '@mui/material';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { getApiUrl, API_CONFIG } from '../config';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -14,10 +15,11 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/login', {
-        username,
-        password,
-      });
+      const response = await axios.post(
+        getApiUrl('api/login'),
+        { username, password },
+        API_CONFIG
+      );
       
       login(
         { userId: response.data.userId, username: response.data.username },

@@ -17,15 +17,27 @@ const server = http.createServer(app);
 const allowedOrigins = [
   'http://localhost:3000',
   'https://localhost:3000',
-  'https://knahid.netlify.app'
+  'https://knahid.netlify.app',
+  'https://knchat.onrender.com'
 ].filter(Boolean);
 
 console.log('Allowed Origins:', allowedOrigins);
 
+// Add health check endpoint
+app.get('/', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
 // Initialize Socket.IO with CORS settings
 const io = socketIo(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ["GET", "POST"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"]
@@ -39,7 +51,10 @@ app.set('trust proxy', 1); // trust first proxy
 app.use(cors({
   origin: function(origin, callback) {
     console.log('Request Origin:', origin);
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -92,7 +107,11 @@ app.use((req, res, next) => {
     cookies: req.cookies,
     sessionID: req.sessionID,
     session: req.session,
-    user: req.session?.user
+    user: req.session?.user,
+    ip: req.ip,
+    ips: req.ips,
+    secure: req.secure,
+    protocol: req.protocol
   });
   next();
 });
@@ -162,7 +181,11 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   try {
-    console.log('Login attempt:', req.body);
+    console.log('Login attempt:', {
+      body: req.body,
+      sessionID: req.sessionID,
+      hasSession: !!req.session
+    });
     
     const { username, password } = req.body;
     
@@ -177,37 +200,45 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ message: 'Invalid username or password' });
     }
 
-    // Set session data
-    req.session.user = { 
-      username: user.username,
-      id: user._id 
-    };
-
-    // Force session save
-    req.session.save((err) => {
+    // Regenerate session to prevent session fixation
+    req.session.regenerate((err) => {
       if (err) {
-        console.error('Session save error:', err);
-        return res.status(500).json({ message: 'Error saving session' });
+        console.error('Session regeneration error:', err);
+        return res.status(500).json({ message: 'Error creating session' });
       }
 
-      console.log('Login successful. Session:', {
-        id: req.sessionID,
-        user: req.session.user,
-        cookie: req.session.cookie
-      });
-
-      // Set cookie explicitly
-      res.cookie('sessionId', req.sessionID, {
-        maxAge: 24 * 60 * 60 * 1000, // 1 day
-        httpOnly: true,
-        secure: true,
-        sameSite: 'none',
-        path: '/'
-      });
-
-      res.json({ 
+      // Set session data
+      req.session.user = { 
         username: user.username,
-        sessionId: req.sessionID
+        id: user._id 
+      };
+
+      // Force session save
+      req.session.save((err) => {
+        if (err) {
+          console.error('Session save error:', err);
+          return res.status(500).json({ message: 'Error saving session' });
+        }
+
+        console.log('Login successful. Session:', {
+          id: req.sessionID,
+          user: req.session.user,
+          cookie: req.session.cookie
+        });
+
+        // Set cookie explicitly
+        res.cookie('sessionId', req.sessionID, {
+          maxAge: 24 * 60 * 60 * 1000, // 1 day
+          httpOnly: true,
+          secure: true,
+          sameSite: 'none',
+          path: '/'
+        });
+
+        res.json({ 
+          username: user.username,
+          sessionId: req.sessionID
+        });
       });
     });
   } catch (error) {
