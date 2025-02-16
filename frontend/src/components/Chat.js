@@ -368,7 +368,12 @@ const Chat = () => {
   }
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ 
+      height: '100vh', 
+      display: 'flex', 
+      flexDirection: 'column',
+      overflow: 'hidden'
+    }}>
       <AppBar 
         position="static" 
         sx={{ 
@@ -405,14 +410,28 @@ const Chat = () => {
         </Toolbar>
       </AppBar>
 
-      <Container sx={{ flex: 1, display: 'flex', flexDirection: 'column', py: 3 }}>
-        <Box sx={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <Container sx={{ 
+        flex: 1, 
+        display: 'flex', 
+        flexDirection: 'column', 
+        py: 3,
+        overflow: 'hidden'
+      }}>
+        <Box sx={{ 
+          position: 'relative', 
+          flex: 1, 
+          display: 'flex', 
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
           <Paper 
             elevation={6} 
             sx={{ 
               flex: 1, 
               mb: 2, 
-              overflow: 'auto',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
               maxHeight: 'calc(100vh - 180px)',
               borderRadius: 3,
               bgcolor: 'background.paper',
@@ -432,7 +451,13 @@ const Chat = () => {
               },
             }}
           >
-            <List sx={{ p: 2 }}>
+            <List sx={{ 
+              p: 2,
+              overflow: 'auto',
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
               {messages.map((message, index) => (
                 <Fade in={true} key={index}>
                   <ListItem
