@@ -1,0 +1,12 @@
+{
+  "name": "mern-chat",
+  "version": "1.0.0",
+  "description": "MERN Chat Application",
+  "scripts": {
+    "start": "cd backend && npm install && node server.js",
+    "build": "cd backend && npm install"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+} 
