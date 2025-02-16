@@ -13,6 +13,14 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 
+// Add environment logging at the top after imports
+console.log('Environment:', {
+  NODE_ENV: process.env.NODE_ENV,
+  PORT: process.env.PORT,
+  MONGODB_URI: process.env.MONGODB_URI ? 'Set' : 'Not Set',
+  FRONTEND_URL: process.env.FRONTEND_URL,
+});
+
 // Allow both development and production origins
 const allowedOrigins = [
   'http://localhost:3000',
@@ -23,9 +31,23 @@ const allowedOrigins = [
 
 console.log('Allowed Origins:', allowedOrigins);
 
-// Add health check endpoint
+// Add health check endpoint with more details
 app.get('/', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    origins: allowedOrigins,
+    session: {
+      enabled: true,
+      store: 'MongoDB',
+      cookie: {
+        secure: true,
+        sameSite: 'none',
+        httpOnly: true
+      }
+    }
+  });
 });
 
 // Initialize Socket.IO with CORS settings
@@ -184,7 +206,13 @@ app.post('/api/login', async (req, res) => {
     console.log('Login attempt:', {
       body: req.body,
       sessionID: req.sessionID,
-      hasSession: !!req.session
+      hasSession: !!req.session,
+      headers: {
+        origin: req.get('origin'),
+        referer: req.get('referer'),
+        'user-agent': req.get('user-agent'),
+        cookie: req.get('cookie')
+      }
     });
     
     const { username, password } = req.body;
@@ -223,7 +251,8 @@ app.post('/api/login', async (req, res) => {
         console.log('Login successful. Session:', {
           id: req.sessionID,
           user: req.session.user,
-          cookie: req.session.cookie
+          cookie: req.session.cookie,
+          store: req.session.store ? 'Connected' : 'Not Connected'
         });
 
         // Set cookie explicitly

@@ -386,7 +386,7 @@ const Chat = () => {
             {username.charAt(0).toUpperCase()}
           </Avatar>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Simple Chat
+            KNchat
           </Typography>
           <Typography variant="subtitle1" sx={{ fontWeight: 500, mr: 2 }}>
             {username}
