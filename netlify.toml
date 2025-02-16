@@ -1,0 +1,12 @@
+[build]
+  base = "frontend"
+  command = "npm install && npm run build"
+  publish = "build"
+
+[build.environment]
+  CI = "false"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200 
