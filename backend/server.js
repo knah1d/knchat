@@ -16,35 +16,38 @@ const server = http.createServer(app);
 // Allow both development and production origins
 const allowedOrigins = [
   'http://localhost:3000',
-  process.env.FRONTEND_URL
-].filter(Boolean); // Remove any undefined values
+  'https://localhost:3000',
+  process.env.FRONTEND_URL,
+  'https://knahid.netlify.app', // Replace with your Netlify domain
+  'https://knahid.netlify.com'  // Alternative Netlify domain
+].filter(Boolean);
 
-console.log('Allowed Origins:', allowedOrigins); // Debug log
+console.log('Allowed Origins:', allowedOrigins);
 
 const io = socketIo(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
-    credentials: true
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"]
   }
 });
 
 // Middleware
 app.use(cors({
   origin: function(origin, callback) {
-    console.log('Request Origin:', origin); // Debug log
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+    console.log('Request Origin:', origin);
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
     }
-    return callback(null, true);
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -57,13 +60,14 @@ app.use(session({
   }),
   cookie: {
     maxAge: 24 * 60 * 60 * 1000, // 1 day
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined
+    secure: true, // Always use secure cookies
+    sameSite: 'none', // Required for cross-site cookies
+    httpOnly: true,
+    path: '/'
   },
-  resave: false,
+  resave: true,
   saveUninitialized: false,
-  proxy: process.env.NODE_ENV === 'production' // trust proxy in production
+  proxy: true // trust proxy
 }));
 
 // Add debug logging for session

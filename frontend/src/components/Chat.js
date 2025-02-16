@@ -20,7 +20,7 @@ import {
 import { Send as SendIcon, EmojiEmotions as EmojiIcon, Logout as LogoutIcon } from '@mui/icons-material';
 import io from 'socket.io-client';
 import axios from 'axios';
-import { API_URL, SOCKET_URL } from '../config';
+import { API_URL, SOCKET_URL, API_CONFIG } from '../config';
 
 // Configure axios to include credentials
 axios.defaults.withCredentials = true;
@@ -134,10 +134,11 @@ const LoginForm = ({ onLogin }) => {
       const response = await axios.post(`${API_URL}${endpoint}`, {
         username,
         password
-      });
+      }, API_CONFIG);
       
       onLogin(response.data.username);
     } catch (error) {
+      console.error('Login error:', error);
       setError(error.response?.data?.message || 'An error occurred');
     }
   };
@@ -276,15 +277,14 @@ const Chat = () => {
   const typingTimeoutRef = useRef(null);
 
   useEffect(() => {
-    // Check authentication status when component mounts
     const checkAuth = async () => {
       try {
-        const response = await axios.get(`${API_URL}/api/check-auth`);
+        const response = await axios.get(`${API_URL}/api/check-auth`, API_CONFIG);
         if (response.data.isAuthenticated) {
           setUsername(response.data.username);
         }
       } catch (error) {
-        console.error('Error checking authentication:', error);
+        console.error('Auth check error:', error);
       }
     };
     checkAuth();
@@ -299,7 +299,8 @@ const Chat = () => {
 
     socketRef.current = io(SOCKET_URL, {
       query: { username },
-      withCredentials: true
+      withCredentials: true,
+      transports: ['websocket', 'polling']
     });
     
     socketRef.current.on('previous-messages', (previousMessages) => {
@@ -352,13 +353,13 @@ const Chat = () => {
 
   const handleLogout = async () => {
     try {
-      await axios.post(`${API_URL}/api/logout`);
+      await axios.post(`${API_URL}/api/logout`, {}, API_CONFIG);
       setUsername('');
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
     } catch (error) {
-      console.error('Error logging out:', error);
+      console.error('Logout error:', error);
     }
   };
 

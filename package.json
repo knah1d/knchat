@@ -2,6 +2,7 @@
   "name": "mern-chat",
   "version": "1.0.0",
   "description": "MERN Chat Application",
+  "main": "backend/server.js",
   "scripts": {
     "start": "cd backend && npm install && node server.js",
     "build": "cd backend && npm install"
