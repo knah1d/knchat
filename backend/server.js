@@ -22,6 +22,17 @@ const allowedOrigins = [
 
 console.log('Allowed Origins:', allowedOrigins);
 
+// Initialize Socket.IO with CORS settings
+const io = socketIo(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"]
+  },
+  cookie: true
+});
+
 // Middleware
 app.set('trust proxy', 1); // trust first proxy
 
@@ -247,6 +258,7 @@ io.on('connection', async (socket) => {
       io.emit('typing-update', Array.from(typingUsers));
     } catch (error) {
       console.error('Error saving message:', error);
+      socket.emit('error', { message: 'Error saving message' });
     }
   });
 
@@ -262,15 +274,18 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('disconnect', () => {
+    console.log('Client disconnected');
     // Clean up typing status when user disconnects
-    const disconnectedUser = Array.from(typingUsers).find(username => 
-      socket.handshake.query.username === username
-    );
-    if (disconnectedUser) {
-      typingUsers.delete(disconnectedUser);
+    const username = socket.handshake.query.username;
+    if (username) {
+      typingUsers.delete(username);
       io.emit('typing-update', Array.from(typingUsers));
     }
-    console.log('Client disconnected');
+  });
+
+  // Error handling
+  socket.on('error', (error) => {
+    console.error('Socket error:', error);
   });
 });
 
