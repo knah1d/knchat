@@ -16,8 +16,10 @@ const server = http.createServer(app);
 // Allow both development and production origins
 const allowedOrigins = [
   'http://localhost:3000',
-  process.env.FRONTEND_URL || 'https://your-netlify-app.netlify.app'
-];
+  process.env.FRONTEND_URL
+].filter(Boolean); // Remove any undefined values
+
+console.log('Allowed Origins:', allowedOrigins); // Debug log
 
 const io = socketIo(server, {
   cors: {
@@ -30,11 +32,14 @@ const io = socketIo(server, {
 // Middleware
 app.use(cors({
   origin: function(origin, callback) {
+    console.log('Request Origin:', origin); // Debug log
+    
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.indexOf(origin) === -1) {
-      return callback(new Error('The CORS policy for this site does not allow access from the specified Origin.'), false);
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
     }
     return callback(null, true);
   },
@@ -43,14 +48,33 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Simple session configuration
+// Session configuration
 app.use(session({
   secret: 'chat-app-secret',
-  store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
-  cookie: { maxAge: 24 * 60 * 60 * 1000 }, // 1 day
+  store: MongoStore.create({ 
+    mongoUrl: process.env.MONGODB_URI,
+    ttl: 24 * 60 * 60 // 1 day
+  }),
+  cookie: {
+    maxAge: 24 * 60 * 60 * 1000, // 1 day
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined
+  },
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: false,
+  proxy: process.env.NODE_ENV === 'production' // trust proxy in production
 }));
+
+// Add debug logging for session
+app.use((req, res, next) => {
+  console.log('Session:', {
+    id: req.session.id,
+    user: req.session.user,
+    cookie: req.session.cookie
+  });
+  next();
+});
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI, {
@@ -117,21 +141,34 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   try {
+    console.log('Login attempt:', req.body); // Debug log
+    
     const { username, password } = req.body;
     
     if (!username || !password) {
+      console.log('Missing credentials');
       return res.status(400).json({ message: 'Username and password are required' });
     }
 
     // Find user and check password directly
     const user = await User.findOne({ username, password });
     if (!user) {
+      console.log('Invalid credentials for username:', username);
       return res.status(400).json({ message: 'Invalid username or password' });
     }
 
     // Set session after successful login
     req.session.user = { username: user.username };
-    res.json({ username });
+    
+    // Save session explicitly
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.status(500).json({ message: 'Error saving session' });
+      }
+      console.log('Login successful:', { username: user.username });
+      res.json({ username: user.username });
+    });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Error logging in' });

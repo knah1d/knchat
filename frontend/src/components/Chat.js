@@ -20,6 +20,7 @@ import {
 import { Send as SendIcon, EmojiEmotions as EmojiIcon, Logout as LogoutIcon } from '@mui/icons-material';
 import io from 'socket.io-client';
 import axios from 'axios';
+import { API_URL, SOCKET_URL } from '../config';
 
 // Configure axios to include credentials
 axios.defaults.withCredentials = true;
@@ -130,7 +131,7 @@ const LoginForm = ({ onLogin }) => {
 
     try {
       const endpoint = isRegistering ? '/api/register' : '/api/login';
-      const response = await axios.post(`http://localhost:5000${endpoint}`, {
+      const response = await axios.post(`${API_URL}${endpoint}`, {
         username,
         password
       });
@@ -278,7 +279,7 @@ const Chat = () => {
     // Check authentication status when component mounts
     const checkAuth = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/check-auth');
+        const response = await axios.get(`${API_URL}/api/check-auth`);
         if (response.data.isAuthenticated) {
           setUsername(response.data.username);
         }
@@ -296,8 +297,9 @@ const Chat = () => {
   useEffect(() => {
     if (!username) return;
 
-    socketRef.current = io('http://localhost:5000', {
-      query: { username }
+    socketRef.current = io(SOCKET_URL, {
+      query: { username },
+      withCredentials: true
     });
     
     socketRef.current.on('previous-messages', (previousMessages) => {
@@ -350,7 +352,7 @@ const Chat = () => {
 
   const handleLogout = async () => {
     try {
-      await axios.post('http://localhost:5000/api/logout');
+      await axios.post(`${API_URL}/api/logout`);
       setUsername('');
       if (socketRef.current) {
         socketRef.current.disconnect();
