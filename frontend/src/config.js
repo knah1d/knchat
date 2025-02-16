@@ -6,7 +6,14 @@ const axiosConfig = {
   headers: {
     'Content-Type': 'application/json',
   },
+  // Ensure cookies are sent with requests
+  xsrfCookieName: 'sessionId',
+  xsrfHeaderName: 'X-XSRF-TOKEN'
 };
+
+// Configure axios defaults
+import axios from 'axios';
+axios.defaults.withCredentials = true;
 
 export const API_URL = BACKEND_URL;
 export const SOCKET_URL = BACKEND_URL;

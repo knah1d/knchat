@@ -17,23 +17,14 @@ const server = http.createServer(app);
 const allowedOrigins = [
   'http://localhost:3000',
   'https://localhost:3000',
-  process.env.FRONTEND_URL,
-  'https://knahid.netlify.app', // Replace with your Netlify domain
-  'https://knahid.netlify.com'  // Alternative Netlify domain
+  'https://knahid.netlify.app'
 ].filter(Boolean);
 
 console.log('Allowed Origins:', allowedOrigins);
 
-const io = socketIo(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"]
-  }
-});
-
 // Middleware
+app.set('trust proxy', 1); // trust first proxy
+
 app.use(cors({
   origin: function(origin, callback) {
     console.log('Request Origin:', origin);
@@ -54,28 +45,35 @@ app.use(cookieParser());
 // Session configuration
 app.use(session({
   secret: 'chat-app-secret',
+  name: 'sessionId', // Change cookie name from connect.sid
   store: MongoStore.create({ 
     mongoUrl: process.env.MONGODB_URI,
-    ttl: 24 * 60 * 60 // 1 day
+    ttl: 24 * 60 * 60, // 1 day
+    autoRemove: 'native',
+    touchAfter: 24 * 3600 // time period in seconds
   }),
   cookie: {
     maxAge: 24 * 60 * 60 * 1000, // 1 day
-    secure: true, // Always use secure cookies
-    sameSite: 'none', // Required for cross-site cookies
+    secure: true,
     httpOnly: true,
-    path: '/'
+    sameSite: 'none',
+    path: '/',
+    domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined
   },
-  resave: true,
-  saveUninitialized: false,
-  proxy: true // trust proxy
+  rolling: true, // Forces the session identifier cookie to be set on every response
+  resave: false,
+  saveUninitialized: false
 }));
 
-// Add debug logging for session
+// Debug middleware
 app.use((req, res, next) => {
-  console.log('Session:', {
-    id: req.session.id,
-    user: req.session.user,
-    cookie: req.session.cookie
+  console.log('Request Details:', {
+    method: req.method,
+    path: req.path,
+    origin: req.get('origin'),
+    cookies: req.cookies,
+    sessionID: req.sessionID,
+    session: req.session
   });
   next();
 });
@@ -145,7 +143,7 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   try {
-    console.log('Login attempt:', req.body); // Debug log
+    console.log('Login attempt:', req.body);
     
     const { username, password } = req.body;
     
@@ -154,28 +152,43 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ message: 'Username and password are required' });
     }
 
-    // Find user and check password directly
     const user = await User.findOne({ username, password });
     if (!user) {
       console.log('Invalid credentials for username:', username);
       return res.status(400).json({ message: 'Invalid username or password' });
     }
 
-    // Set session after successful login
-    req.session.user = { username: user.username };
-    
-    // Save session explicitly
-    req.session.save((err) => {
-      if (err) {
-        console.error('Session save error:', err);
-        return res.status(500).json({ message: 'Error saving session' });
-      }
-      console.log('Login successful:', { username: user.username });
-      res.json({ username: user.username });
+    // Set session data
+    req.session.user = { 
+      username: user.username,
+      id: user._id 
+    };
+
+    // Force session save and wait for it
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error('Session save error:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    console.log('Login successful. Session:', {
+      id: req.sessionID,
+      user: req.session.user,
+      cookie: req.session.cookie
+    });
+
+    res.json({ 
+      username: user.username,
+      sessionId: req.sessionID
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Error logging in' });
+    res.status(500).json({ message: 'Error logging in', error: error.message });
   }
 });
 

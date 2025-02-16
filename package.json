@@ -2,12 +2,13 @@
   "name": "mern-chat",
   "version": "1.0.0",
   "description": "MERN Chat Application",
-  "main": "backend/server.js",
+  "main": "./backend/server.js",
   "scripts": {
-    "start": "cd backend && npm install && node server.js",
-    "build": "cd backend && npm install"
+    "start": "node ./backend/server.js",
+    "install-backend": "cd backend && npm install",
+    "postinstall": "npm run install-backend"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": "18.x"
   }
 } 
