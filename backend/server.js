@@ -45,35 +45,43 @@ app.use(cookieParser());
 // Session configuration
 app.use(session({
   secret: 'chat-app-secret',
-  name: 'sessionId', // Change cookie name from connect.sid
+  name: 'sessionId',
   store: MongoStore.create({ 
     mongoUrl: process.env.MONGODB_URI,
     ttl: 24 * 60 * 60, // 1 day
-    autoRemove: 'native',
-    touchAfter: 24 * 3600 // time period in seconds
+    autoRemove: 'native'
   }),
   cookie: {
     maxAge: 24 * 60 * 60 * 1000, // 1 day
     secure: true,
     httpOnly: true,
     sameSite: 'none',
-    path: '/',
-    domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined
+    path: '/'
   },
-  rolling: true, // Forces the session identifier cookie to be set on every response
-  resave: false,
-  saveUninitialized: false
+  rolling: true,
+  resave: true,
+  saveUninitialized: false,
+  proxy: true
 }));
 
-// Debug middleware
+// Add headers for better cookie handling
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  next();
+});
+
+// Debug middleware with more details
 app.use((req, res, next) => {
   console.log('Request Details:', {
     method: req.method,
     path: req.path,
     origin: req.get('origin'),
+    headers: req.headers,
     cookies: req.cookies,
     sessionID: req.sessionID,
-    session: req.session
+    session: req.session,
+    user: req.session?.user
   });
   next();
 });
@@ -164,27 +172,32 @@ app.post('/api/login', async (req, res) => {
       id: user._id 
     };
 
-    // Force session save and wait for it
-    await new Promise((resolve, reject) => {
-      req.session.save((err) => {
-        if (err) {
-          console.error('Session save error:', err);
-          reject(err);
-        } else {
-          resolve();
-        }
+    // Force session save
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.status(500).json({ message: 'Error saving session' });
+      }
+
+      console.log('Login successful. Session:', {
+        id: req.sessionID,
+        user: req.session.user,
+        cookie: req.session.cookie
       });
-    });
 
-    console.log('Login successful. Session:', {
-      id: req.sessionID,
-      user: req.session.user,
-      cookie: req.session.cookie
-    });
+      // Set cookie explicitly
+      res.cookie('sessionId', req.sessionID, {
+        maxAge: 24 * 60 * 60 * 1000, // 1 day
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        path: '/'
+      });
 
-    res.json({ 
-      username: user.username,
-      sessionId: req.sessionID
+      res.json({ 
+        username: user.username,
+        sessionId: req.sessionID
+      });
     });
   } catch (error) {
     console.error('Login error:', error);
