@@ -26,7 +26,7 @@ console.log('Environment:', {
 const allowedOrigins = [
   'http://localhost:3000',
   'https://localhost:3000',
-  'https://knahid.netlify.app',
+  'https://knchat.netlify.app',
   'https://knchat.onrender.com'
 ].filter(Boolean);
 
