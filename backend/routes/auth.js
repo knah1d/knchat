@@ -116,69 +116,69 @@ router.get('/check-auth', (req, res) => {
 //   }
 // });
 
-// // Login
-// router.post('/login', async (req, res) => {
-//   try {
-//     console.log('Login attempt:', {
-//       body: req.body,
-//       sessionID: req.sessionID,
-//       hasSession: !!req.session,
-//       headers: {
-//         origin: req.get('origin'),
-//         referer: req.get('referer'),
-//         cookie: req.get('cookie')
-//       }
-//     });
+// Login
+router.post('/login', async (req, res) => {
+  try {
+    console.log('Login attempt:', {
+      body: req.body,
+      sessionID: req.sessionID,
+      hasSession: !!req.session,
+      headers: {
+        origin: req.get('origin'),
+        referer: req.get('referer'),
+        cookie: req.get('cookie')
+      }
+    });
     
-//     const { username, password } = req.body;
+    const { username, password } = req.body;
     
-//     if (!username || !password) {
-//       return res.status(400).json({ message: 'Username and password are required' });
-//     }
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Username and password are required' });
+    }
 
-//     const user = await User.findOne({ username, password });
-//     if (!user) {
-//       return res.status(400).json({ message: 'Invalid username or password' });
-//     }
+    const user = await User.findOne({ username, password });
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid username or password' });
+    }
 
-//     // Set proper CORS headers
-//     res.set({
-//       'Access-Control-Allow-Credentials': 'true',
-//       'Access-Control-Allow-Origin': req.headers.origin || req.headers.referer
-//     });
+    // Set proper CORS headers
+    res.set({
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Origin': req.headers.origin || req.headers.referer
+    });
 
-//     // Set session data
-//     req.session.user = { 
-//       username: user.username,
-//       id: user._id 
-//     };
+    // Set session data
+    req.session.user = { 
+      username: user.username,
+      id: user._id 
+    };
 
-//     // Save session explicitly
-//     await new Promise((resolve, reject) => {
-//       req.session.save((err) => {
-//         if (err) {
-//           console.error('Session save error:', err);
-//           reject(err);
-//         } else {
-//           console.log('Session saved successfully:', {
-//             sessionID: req.sessionID,
-//             user: req.session.user,
-//             cookies: req.cookies
-//           });
-//           resolve();
-//         }
-//       });
-//     });
+    // Save session explicitly
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error('Session save error:', err);
+          reject(err);
+        } else {
+          console.log('Session saved successfully:', {
+            sessionID: req.sessionID,
+            user: req.session.user,
+            cookies: req.cookies
+          });
+          resolve();
+        }
+      });
+    });
 
-//     res.json({ 
-//       username: user.username,
-//       sessionID: req.sessionID
-//     });
-//   } catch (error) {
-//     console.error('Login error:', error);
-//     res.status(500).json({ message: 'Error logging in', error: error.message });
-//   }
-// });
+    res.json({ 
+      username: user.username,
+      sessionID: req.sessionID
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Error logging in', error: error.message });
+  }
+});
 
 // Logout
 router.post('/logout', (req, res) => {
