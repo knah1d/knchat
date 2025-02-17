@@ -93,31 +93,60 @@ app.use(cookieParser());
 // Session configuration
 app.use(session({
   secret: 'chat-app-secret',
-  name: 'sessionId',
+  name: 'connect.sid', // Use default session cookie name
   store: MongoStore.create({ 
     mongoUrl: process.env.MONGODB_URI,
     ttl: 24 * 60 * 60, // 1 day
-    autoRemove: 'native'
+    autoRemove: 'native',
+    touchAfter: 24 * 3600 // time period in seconds between session updates
   }),
   cookie: {
     maxAge: 24 * 60 * 60 * 1000, // 1 day
-    secure: true,
+    secure: process.env.NODE_ENV === 'production', // Only use secure in production
     httpOnly: true,
-    sameSite: 'none',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/'
   },
-  
   rolling: true,
-  resave: true,
+  resave: false,
   saveUninitialized: false,
   proxy: true
 }));
 
-// Add headers for better cookie handling
+// Debug middleware for session
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  console.log('Session Debug:', {
+    sessionID: req.sessionID,
+    hasSession: !!req.session,
+    sessionData: req.session,
+    cookies: req.cookies,
+    user: req.session?.user
+  });
   next();
+});
+
+// Check session status with better error handling
+app.get('/api/check-auth', (req, res) => {
+  console.log('Check Auth Debug:', {
+    sessionID: req.sessionID,
+    session: req.session,
+    user: req.session?.user,
+    cookies: req.cookies
+  });
+
+  if (req.session && req.session.user) {
+    res.json({ 
+      isAuthenticated: true, 
+      username: req.session.user.username,
+      sessionID: req.sessionID
+    });
+  } else {
+    res.json({ 
+      isAuthenticated: false,
+      reason: !req.session ? 'No session' : 'No user in session',
+      sessionID: req.sessionID
+    });
+  }
 });
 
 // Debug middleware with more details
@@ -149,15 +178,6 @@ mongoose.connect(process.env.MONGODB_URI, {
 
 // Store typing users
 let typingUsers = new Set();
-
-// Check session status
-app.get('/api/check-auth', (req, res) => {
-  if (req.session.user) {
-    res.json({ isAuthenticated: true, username: req.session.user.username });
-  } else {
-    res.json({ isAuthenticated: false });
-  }
-});
 
 // Get recent messages
 app.get('/api/messages', async (req, res) => {

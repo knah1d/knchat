@@ -14,7 +14,8 @@ import {
   Fade,
   IconButton,
   Alert,
-  Link
+  Link,
+  CircularProgress
 } from '@mui/material';
 import { Send as SendIcon, EmojiEmotions as EmojiIcon, Logout as LogoutIcon } from '@mui/icons-material';
 import io from 'socket.io-client';
@@ -271,38 +272,65 @@ const Chat = () => {
   const [newMessage, setNewMessage] = useState('');
   const [username, setUsername] = useState('');
   const [typingUsers, setTypingUsers] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const socketRef = useRef();
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const response = await axios.get(`${API_URL}/api/check-auth`, API_CONFIG);
-        if (response.data.isAuthenticated) {
-          setUsername(response.data.username);
-        }
-      } catch (error) {
-        console.error('Auth check error:', error);
+  const checkAuth = async () => {
+    try {
+      console.log('Checking authentication...');
+      const response = await axios.get(`${API_URL}/api/check-auth`, {
+        ...API_CONFIG,
+        withCredentials: true
+      });
+      
+      console.log('Auth check response:', response.data);
+      
+      if (response.data.isAuthenticated) {
+        setUsername(response.data.username);
+        return true;
+      } else {
+        console.log('Not authenticated:', response.data.reason);
+        setUsername('');
+        return false;
       }
-    };
+    } catch (error) {
+      console.error('Auth check error:', error);
+      setUsername('');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Initial auth check
+  useEffect(() => {
     checkAuth();
   }, []);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
+  // Socket connection
   useEffect(() => {
     if (!username) return;
 
+    console.log('Initializing socket connection for user:', username);
+    
     socketRef.current = io(SOCKET_URL, {
       query: { username },
       withCredentials: true,
       transports: ['websocket', 'polling']
     });
+
+    socketRef.current.on('connect', () => {
+      console.log('Socket connected successfully');
+    });
+
+    socketRef.current.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+    });
     
     socketRef.current.on('previous-messages', (previousMessages) => {
+      console.log('Received previous messages:', previousMessages.length);
       setMessages(previousMessages);
     });
     
@@ -315,9 +343,55 @@ const Chat = () => {
     });
 
     return () => {
-      socketRef.current?.disconnect();
+      console.log('Cleaning up socket connection');
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
     };
   }, [username]);
+
+  // Handle login success
+  const handleLoginSuccess = async (newUsername) => {
+    console.log('Login success for user:', newUsername);
+    setUsername(newUsername);
+    await checkAuth(); // Verify authentication immediately after login
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    try {
+      setIsLoading(true);
+      console.log('Logging out...');
+      
+      await axios.post(`${API_URL}/api/logout`, {}, {
+        ...API_CONFIG,
+        withCredentials: true
+      });
+      
+      // Clean up socket connection
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      
+      // Clear all states
+      setUsername('');
+      setMessages([]);
+      setTypingUsers([]);
+      setNewMessage('');
+      
+      console.log('Logout successful');
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -350,20 +424,28 @@ const Chat = () => {
     setNewMessage('');
   };
 
-  const handleLogout = async () => {
-    try {
-      await axios.post(`${API_URL}/api/logout`, {}, API_CONFIG);
-      setUsername('');
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
+  if (isLoading) {
+    return (
+      <Box
+        sx={{
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          bgcolor: 'background.default'
+        }}
+      >
+        <CircularProgress sx={{ mb: 2 }} />
+        <Typography variant="body1" color="text.secondary">
+          {username ? 'Loading chat...' : 'Checking session...'}
+        </Typography>
+      </Box>
+    );
+  }
 
   if (!username) {
-    return <LoginForm onLogin={setUsername} />;
+    return <LoginForm onLogin={handleLoginSuccess} />;
   }
 
   return (
