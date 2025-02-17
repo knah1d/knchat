@@ -8,6 +8,7 @@ const Message = require('./models/Message');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const cookieParser = require('cookie-parser');
+const authRoutes = require('./routes/auth');
 require('dotenv').config();
 
 const app = express();
@@ -31,7 +32,136 @@ const allowedOrigins = [
 
 console.log('Allowed Origins:', allowedOrigins);
 
-// Add health check endpoint with more details
+// Middleware order is important!
+app.set('trust proxy', 1); // trust first proxy
+
+// Basic middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+// CORS configuration
+const corsOptions = {
+  origin: function(origin, callback) {
+    console.log('CORS Request Origin:', origin);
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.error('CORS Error - Origin not allowed:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  exposedHeaders: ['set-cookie'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+
+// MongoDB Connection with retry
+const connectMongoDB = async (retries = 5) => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    });
+    console.log('Connected to MongoDB');
+  } catch (err) {
+    if (retries === 0) {
+      console.error('MongoDB connection failed after retries:', err);
+      process.exit(1);
+    }
+    console.log(`MongoDB connection attempt failed. Retrying... (${retries} attempts left)`);
+    setTimeout(() => connectMongoDB(retries - 1), 5000);
+  }
+};
+
+connectMongoDB();
+
+// Session store setup with error handling
+const sessionStore = MongoStore.create({ 
+  mongoUrl: process.env.MONGODB_URI,
+  ttl: 24 * 60 * 60, // 1 day
+  autoRemove: 'native',
+  touchAfter: 24 * 3600, // time period in seconds between session updates
+  stringify: false,
+  crypto: {
+    secret: 'chat-app-secret'
+  }
+});
+
+sessionStore.on('error', function(error) {
+  console.error('Session store error:', error);
+});
+
+// Session configuration
+const sessionConfig = {
+  secret: 'chat-app-secret',
+  name: 'connect.sid',
+  store: sessionStore,
+  cookie: {
+    maxAge: 24 * 60 * 60 * 1000, // 1 day
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/'
+  },
+  rolling: true,
+  resave: false,
+  saveUninitialized: false,
+  proxy: true
+};
+
+// Debug session store
+if (process.env.NODE_ENV !== 'production') {
+  sessionStore.on('create', function(sessionId) {
+    console.log('Session created:', sessionId);
+  });
+  
+  sessionStore.on('touch', function(sessionId) {
+    console.log('Session touched:', sessionId);
+  });
+  
+  sessionStore.on('destroy', function(sessionId) {
+    console.log('Session destroyed:', sessionId);
+  });
+}
+
+app.use(session(sessionConfig));
+
+// Add security headers
+app.use((req, res, next) => {
+  res.set({
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Origin': req.headers.origin || req.headers.referer,
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  next();
+});
+
+// Debug middleware
+app.use((req, res, next) => {
+  console.log('Request Debug:', {
+    url: req.url,
+    method: req.method,
+    sessionID: req.sessionID,
+    hasSession: !!req.session,
+    cookies: req.cookies,
+    headers: {
+      origin: req.get('origin'),
+      referer: req.get('referer'),
+      cookie: req.get('cookie')
+    }
+  });
+  next();
+});
+
+// Health check endpoint
 app.get('/', (req, res) => {
   res.json({ 
     status: 'healthy', 
@@ -42,274 +172,40 @@ app.get('/', (req, res) => {
       enabled: true,
       store: 'MongoDB',
       cookie: {
-        secure: true,
-        sameSite: 'none',
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         httpOnly: true
       }
     }
   });
 });
 
+// Use auth routes
+app.use('/api', authRoutes);
+
 // Initialize Socket.IO with CORS settings
 const io = socketIo(server, {
   cors: {
-    origin: (origin, callback) => {
+    origin: function(origin, callback) {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
       }
     },
-    methods: ["GET", "POST"],
+    methods: ['GET', 'POST'],
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"]
-  },
-  cookie: true
-});
-
-// Middleware
-app.set('trust proxy', 1); // trust first proxy
-
-app.use(cors({
-  origin: function(origin, callback) {
-    console.log('Request Origin:', origin);
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-app.use(express.json());
-app.use(cookieParser());
-
-// Session configuration
-app.use(session({
-  secret: 'chat-app-secret',
-  name: 'connect.sid', // Use default session cookie name
-  store: MongoStore.create({ 
-    mongoUrl: process.env.MONGODB_URI,
-    ttl: 24 * 60 * 60, // 1 day
-    autoRemove: 'native',
-    touchAfter: 24 * 3600 // time period in seconds between session updates
-  }),
-  cookie: {
-    maxAge: 24 * 60 * 60 * 1000, // 1 day
-    secure: process.env.NODE_ENV === 'production', // Only use secure in production
-    httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    path: '/'
-  },
-  rolling: true,
-  resave: false,
-  saveUninitialized: false,
-  proxy: true
-}));
-
-// Debug middleware for session
-app.use((req, res, next) => {
-  console.log('Session Debug:', {
-    sessionID: req.sessionID,
-    hasSession: !!req.session,
-    sessionData: req.session,
-    cookies: req.cookies,
-    user: req.session?.user
-  });
-  next();
-});
-
-// Check session status with better error handling
-app.get('/api/check-auth', (req, res) => {
-  console.log('Check Auth Debug:', {
-    sessionID: req.sessionID,
-    session: req.session,
-    user: req.session?.user,
-    cookies: req.cookies
-  });
-
-  if (req.session && req.session.user) {
-    res.json({ 
-      isAuthenticated: true, 
-      username: req.session.user.username,
-      sessionID: req.sessionID
-    });
-  } else {
-    res.json({ 
-      isAuthenticated: false,
-      reason: !req.session ? 'No session' : 'No user in session',
-      sessionID: req.sessionID
-    });
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
   }
 });
-
-// Debug middleware with more details
-app.use((req, res, next) => {
-  console.log('Request Details:', {
-    method: req.method,
-    path: req.path,
-    origin: req.get('origin'),
-    headers: req.headers,
-    cookies: req.cookies,
-    sessionID: req.sessionID,
-    session: req.session,
-    user: req.session?.user,
-    ip: req.ip,
-    ips: req.ips,
-    secure: req.secure,
-    protocol: req.protocol
-  });
-  next();
-});
-
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log('Connected to MongoDB'))
-.catch(err => console.error('MongoDB connection error:', err));
 
 // Store typing users
 let typingUsers = new Set();
 
-// Get recent messages
-app.get('/api/messages', async (req, res) => {
-  try {
-    const messages = await Message.find()
-      .sort({ timestamp: -1 })
-      .limit(50)
-      .lean();
-    res.json(messages.reverse());
-  } catch (error) {
-    console.error('Error fetching messages:', error);
-    res.status(500).json({ message: 'Error fetching messages' });
-  }
-});
-
-// Auth Routes
-app.post('/api/register', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    
-    if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password are required' });
-    }
-
-    // Check if user exists
-    const existingUser = await User.findOne({ username });
-    if (existingUser) {
-      return res.status(400).json({ message: 'Username already exists' });
-    }
-
-    // Create new user with plain password
-    const user = new User({ username, password });
-    await user.save();
-
-    // Set session after successful registration
-    req.session.user = { username: user.username };
-    
-    res.status(201).json({ username });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ message: 'Error creating user' });
-  }
-});
-
-app.post('/api/login', async (req, res) => {
-  try {
-    console.log('Login attempt:', {
-      body: req.body,
-      sessionID: req.sessionID,
-      hasSession: !!req.session,
-      headers: {
-        origin: req.get('origin'),
-        referer: req.get('referer'),
-        'user-agent': req.get('user-agent'),
-        cookie: req.get('cookie')
-      }
-    });
-    
-    const { username, password } = req.body;
-    
-    if (!username || !password) {
-      console.log('Missing credentials');
-      return res.status(400).json({ message: 'Username and password are required' });
-    }
-
-    const user = await User.findOne({ username, password });
-    if (!user) {
-      console.log('Invalid credentials for username:', username);
-      return res.status(400).json({ message: 'Invalid username or password' });
-    }
-
-    // Regenerate session to prevent session fixation
-    req.session.regenerate((err) => {
-      if (err) {
-        console.error('Session regeneration error:', err);
-        return res.status(500).json({ message: 'Error creating session' });
-      }
-
-      // Set session data
-      req.session.user = { 
-        username: user.username,
-        id: user._id 
-      };
-
-      // Force session save
-      req.session.save((err) => {
-        if (err) {
-          console.error('Session save error:', err);
-          return res.status(500).json({ message: 'Error saving session' });
-        }
-
-        console.log('Login successful. Session:', {
-          id: req.sessionID,
-          user: req.session.user,
-          cookie: req.session.cookie,
-          store: req.session.store ? 'Connected' : 'Not Connected'
-        });
-
-        // Set cookie explicitly
-        res.cookie('sessionId', req.sessionID, {
-          maxAge: 24 * 60 * 60 * 1000, // 1 day
-          httpOnly: true,
-          secure: true,
-          sameSite: 'none',
-          path: '/'
-        });
-
-        res.json({ 
-          username: user.username,
-          sessionId: req.sessionID
-        });
-      });
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ message: 'Error logging in', error: error.message });
-  }
-});
-
-app.post('/api/logout', (req, res) => {
-  req.session.destroy((err) => {
-    if (err) {
-      return res.status(500).json({ message: 'Error logging out' });
-    }
-    res.clearCookie('connect.sid');
-    res.json({ message: 'Logged out successfully' });
-  });
-});
-
 // Socket.IO connection handling
 io.on('connection', async (socket) => {
-  console.log('New client connected');
+  const username = socket.handshake.query.username;
+  console.log('New client connected:', username);
 
   try {
     // Send existing messages to newly connected client
@@ -325,6 +221,8 @@ io.on('connection', async (socket) => {
   // Handle new messages
   socket.on('message', async (messageData) => {
     try {
+      console.log('New message received:', messageData);
+      
       const message = new Message({
         content: messageData.content,
         username: messageData.username,
@@ -332,7 +230,14 @@ io.on('connection', async (socket) => {
       });
       
       await message.save();
-      io.emit('message', message);
+      console.log('Message saved:', message);
+      
+      // Broadcast the message to all connected clients
+      io.emit('message', {
+        content: message.content,
+        username: message.username,
+        timestamp: message.timestamp
+      });
       
       // Clear typing status when message is sent
       typingUsers.delete(messageData.username);
@@ -345,19 +250,20 @@ io.on('connection', async (socket) => {
 
   // Handle typing status
   socket.on('typing-start', (username) => {
+    console.log('User started typing:', username);
     typingUsers.add(username);
     io.emit('typing-update', Array.from(typingUsers));
   });
 
   socket.on('typing-end', (username) => {
+    console.log('User stopped typing:', username);
     typingUsers.delete(username);
     io.emit('typing-update', Array.from(typingUsers));
   });
 
+  // Handle disconnection
   socket.on('disconnect', () => {
-    console.log('Client disconnected');
-    // Clean up typing status when user disconnects
-    const username = socket.handshake.query.username;
+    console.log('Client disconnected:', username);
     if (username) {
       typingUsers.delete(username);
       io.emit('typing-update', Array.from(typingUsers));
@@ -368,6 +274,20 @@ io.on('connection', async (socket) => {
   socket.on('error', (error) => {
     console.error('Socket error:', error);
   });
+});
+
+// Get recent messages
+app.get('/api/messages', async (req, res) => {
+  try {
+    const messages = await Message.find()
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .lean();
+    res.json(messages.reverse());
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({ message: 'Error fetching messages' });
+  }
 });
 
 const PORT = process.env.PORT || 5000;

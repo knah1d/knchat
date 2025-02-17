@@ -318,7 +318,10 @@ const Chat = () => {
     socketRef.current = io(SOCKET_URL, {
       query: { username },
       withCredentials: true,
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
     });
 
     socketRef.current.on('connect', () => {
@@ -328,6 +331,10 @@ const Chat = () => {
     socketRef.current.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
     });
+
+    socketRef.current.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+    });
     
     socketRef.current.on('previous-messages', (previousMessages) => {
       console.log('Received previous messages:', previousMessages.length);
@@ -335,11 +342,16 @@ const Chat = () => {
     });
     
     socketRef.current.on('message', (message) => {
+      console.log('Received new message:', message);
       setMessages((prevMessages) => [...prevMessages, message]);
     });
 
     socketRef.current.on('typing-update', (users) => {
       setTypingUsers(users);
+    });
+
+    socketRef.current.on('error', (error) => {
+      console.error('Socket error:', error);
     });
 
     return () => {
@@ -414,14 +426,29 @@ const Chat = () => {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    const messageData = {
+    console.log('Sending message:', {
       content: newMessage,
       username: username,
       timestamp: new Date().toISOString()
-    };
+    });
 
-    socketRef.current.emit('message', messageData);
-    setNewMessage('');
+    try {
+      if (!socketRef.current?.connected) {
+        console.error('Socket not connected');
+        return;
+      }
+
+      const messageData = {
+        content: newMessage,
+        username: username,
+        timestamp: new Date().toISOString()
+      };
+
+      socketRef.current.emit('message', messageData);
+      setNewMessage('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
   };
 
   if (isLoading) {
