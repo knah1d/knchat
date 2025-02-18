@@ -184,11 +184,33 @@ const VideoCall = ({ username, open, onClose, socket }) => {
   }, [open]);
 
   useEffect(() => {
-    if (localStream && localVideoRef.current) {
-      console.log('Updating video element with new stream');
-      localVideoRef.current.srcObject = localStream;
-      debugVideoElement();
-    }
+    if (!localVideoRef.current || !localStream) return;
+
+    const videoElement = localVideoRef.current;
+    videoElement.srcObject = localStream;
+    videoElement.muted = true;
+
+    const playVideo = async () => {
+      try {
+        await videoElement.play();
+        console.log('Video playing successfully');
+      } catch (err) {
+        console.error('Failed to play video:', err);
+      }
+    };
+
+    videoElement.onloadedmetadata = () => {
+      console.log('Video metadata loaded');
+      playVideo();
+    };
+
+    // Try to play immediately as well
+    playVideo();
+
+    return () => {
+      videoElement.srcObject = null;
+      videoElement.onloadedmetadata = null;
+    };
   }, [localStream]);
 
   useEffect(() => {
@@ -422,112 +444,104 @@ const VideoCall = ({ username, open, onClose, socket }) => {
               </Typography>
             </Box>
           ) : (
-            !currentCall && !incomingCall ? (
-              <Box>
-                <Box 
-                  sx={{ 
-                    width: '100%', 
-                    maxWidth: 400, 
-                    margin: '0 auto 20px auto',
-                    position: 'relative',
-                    aspectRatio: '16/9',
-                    backgroundColor: '#1a1a1a',
-                    borderRadius: '8px',
-                    overflow: 'hidden'
+            <Box>
+              <Box 
+                sx={{ 
+                  width: '100%', 
+                  maxWidth: 400, 
+                  margin: '0 auto 20px auto',
+                  position: 'relative',
+                  aspectRatio: '16/9',
+                  backgroundColor: '#1a1a1a',
+                  borderRadius: '8px',
+                  overflow: 'hidden'
+                }}
+              >
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{ 
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    transform: 'scaleX(-1)',
+                    display: 'block'
                   }}
-                  onClick={async () => {
-                    if (localVideoRef.current && localVideoRef.current.paused) {
-                      try {
-                        await localVideoRef.current.play();
-                        console.log('Video started on click');
-                        debugVideoElement();
-                      } catch (err) {
-                        console.error('Play failed on click:', err);
-                      }
-                    }
-                  }}
-                >
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    style={{ 
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      transform: 'scaleX(-1)',
-                      display: isVideoEnabled ? 'block' : 'none',
-                      backgroundColor: '#1a1a1a'
-                    }}
-                  />
-                  {!isVideoEnabled && (
-                    <Box sx={{ 
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: '#1a1a1a'
-                    }}>
-                      <Typography variant="body1" color="white">
-                        Camera Off
-                      </Typography>
-                    </Box>
-                  )}
+                />
+                
+                {!isVideoEnabled && (
                   <Box sx={{ 
-                    position: 'absolute', 
-                    bottom: 8, 
-                    left: 0, 
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
                     right: 0,
-                    px: 2,
+                    bottom: 0,
                     display: 'flex',
+                    alignItems: 'center',
                     justifyContent: 'center',
-                    gap: 1
+                    backgroundColor: '#1a1a1a',
+                    zIndex: 1
                   }}>
-                    <IconButton 
-                      size="small"
-                      onClick={() => {
-                        if (localStream) {
-                          const videoTrack = localStream.getVideoTracks()[0];
-                          if (videoTrack) {
-                            videoTrack.enabled = !videoTrack.enabled;
-                            setIsVideoEnabled(videoTrack.enabled);
-                          }
-                        }
-                      }}
-                      sx={{ 
-                        bgcolor: 'rgba(0,0,0,0.6)',
-                        color: 'white',
-                        '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
-                      }}
-                    >
-                      {isVideoEnabled ? <VideocamIcon /> : <VideocamOffIcon />}
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        if (localStream) {
-                          const audioTrack = localStream.getAudioTracks()[0];
-                          if (audioTrack) {
-                            audioTrack.enabled = !audioTrack.enabled;
-                            setIsAudioEnabled(audioTrack.enabled);
-                          }
-                        }
-                      }}
-                      sx={{ 
-                        bgcolor: 'rgba(0,0,0,0.6)',
-                        color: 'white',
-                        '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
-                      }}
-                    >
-                      {isAudioEnabled ? <MicIcon /> : <MicOffIcon />}
-                    </IconButton>
+                    <Typography variant="body1" color="white">
+                      Camera Off
+                    </Typography>
                   </Box>
+                )}
+
+                <Box sx={{ 
+                  position: 'absolute', 
+                  bottom: 8, 
+                  left: 0, 
+                  right: 0,
+                  px: 2,
+                  display: 'flex',
+                  justifyContent: 'center',
+                  gap: 1,
+                  zIndex: 2
+                }}>
+                  <IconButton 
+                    size="small"
+                    onClick={() => {
+                      if (localStream) {
+                        const videoTrack = localStream.getVideoTracks()[0];
+                        if (videoTrack) {
+                          videoTrack.enabled = !videoTrack.enabled;
+                          setIsVideoEnabled(videoTrack.enabled);
+                        }
+                      }
+                    }}
+                    sx={{ 
+                      bgcolor: 'rgba(0,0,0,0.6)',
+                      color: 'white',
+                      '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
+                    }}
+                  >
+                    {isVideoEnabled ? <VideocamIcon /> : <VideocamOffIcon />}
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      if (localStream) {
+                        const audioTrack = localStream.getAudioTracks()[0];
+                        if (audioTrack) {
+                          audioTrack.enabled = !audioTrack.enabled;
+                          setIsAudioEnabled(audioTrack.enabled);
+                        }
+                      }
+                    }}
+                    sx={{ 
+                      bgcolor: 'rgba(0,0,0,0.6)',
+                      color: 'white',
+                      '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
+                    }}
+                  >
+                    {isAudioEnabled ? <MicIcon /> : <MicOffIcon />}
+                  </IconButton>
                 </Box>
+              </Box>
+              {!currentCall && !incomingCall ? (
                 <List>
                   {activeUsers.map((user) => (
                     <ListItem key={user.peerId}>
@@ -552,152 +566,152 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                     </Typography>
                   )}
                 </List>
-              </Box>
-            ) : (
-              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                <Box sx={{ width: '50%', position: 'relative' }}>
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    style={{ 
-                      width: '100%', 
-                      borderRadius: '8px', 
-                      backgroundColor: '#1a1a1a',
-                      display: isVideoEnabled ? 'block' : 'none'
-                    }}
-                  />
-                  {!isVideoEnabled && (
+              ) : (
+                <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                  <Box sx={{ width: '50%', position: 'relative' }}>
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      style={{ 
+                        width: '100%', 
+                        borderRadius: '8px', 
+                        backgroundColor: '#1a1a1a',
+                        display: isVideoEnabled ? 'block' : 'none'
+                      }}
+                    />
+                    {!isVideoEnabled && (
+                      <Box sx={{ 
+                        width: '100%', 
+                        height: '100%', 
+                        borderRadius: '8px', 
+                        backgroundColor: '#1a1a1a',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        aspectRatio: '16/9'
+                      }}>
+                        <Typography variant="body1" color="white">
+                          Camera Off
+                        </Typography>
+                      </Box>
+                    )}
                     <Box sx={{ 
-                      width: '100%', 
-                      height: '100%', 
-                      borderRadius: '8px', 
-                      backgroundColor: '#1a1a1a',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      aspectRatio: '16/9'
-                    }}>
-                      <Typography variant="body1" color="white">
-                        Camera Off
-                      </Typography>
-                    </Box>
-                  )}
-                  <Box sx={{ 
-                    position: 'absolute', 
-                    bottom: 8, 
-                    left: 0, 
-                    right: 0,
-                    px: 2,
-                    display: 'flex',
-                    justifyContent: 'center',
-                    gap: 1
-                  }}>
-                    <IconButton 
-                      size="small"
-                      onClick={() => {
-                        const videoTrack = localStream.getVideoTracks()[0];
-                        if (videoTrack) {
-                          videoTrack.enabled = !videoTrack.enabled;
-                          setIsVideoEnabled(videoTrack.enabled);
-                        }
-                      }}
-                      sx={{ 
-                        bgcolor: 'rgba(0,0,0,0.6)',
-                        color: 'white',
-                        '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
-                      }}
-                    >
-                      {isVideoEnabled ? <VideocamIcon /> : <VideocamOffIcon />}
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        const audioTrack = localStream.getAudioTracks()[0];
-                        if (audioTrack) {
-                          audioTrack.enabled = !audioTrack.enabled;
-                          setIsAudioEnabled(audioTrack.enabled);
-                        }
-                      }}
-                      sx={{ 
-                        bgcolor: 'rgba(0,0,0,0.6)',
-                        color: 'white',
-                        '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
-                      }}
-                    >
-                      {isAudioEnabled ? <MicIcon /> : <MicOffIcon />}
-                    </IconButton>
-                  </Box>
-                  <Box sx={{ 
-                    position: 'absolute', 
-                    top: 8, 
-                    left: 8, 
-                    color: 'white', 
-                    textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-                    bgcolor: 'rgba(0,0,0,0.4)',
-                    px: 1,
-                    py: 0.5,
-                    borderRadius: 1
-                  }}>
-                    You
-                  </Box>
-                </Box>
-                <Box sx={{ width: '50%', position: 'relative' }}>
-                  <video
-                    ref={remoteVideoRef}
-                    autoPlay
-                    playsInline
-                    muted={false}
-                    controls
-                    style={{ 
-                      width: '100%', 
-                      borderRadius: '8px', 
-                      backgroundColor: '#1a1a1a',
-                      display: remoteStream ? 'block' : 'none'
-                    }}
-                    onLoadedMetadata={(e) => {
-                      console.log('Remote video metadata loaded');
-                      e.target.play().catch(err => console.error('Play failed:', err));
-                    }}
-                    onPlay={() => console.log('Remote video playing')}
-                    onError={(e) => console.error('Video error:', e)}
-                  />
-                  {!remoteStream && (
-                    <Box sx={{ 
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
+                      position: 'absolute', 
+                      bottom: 8, 
+                      left: 0, 
                       right: 0,
-                      bottom: 0,
+                      px: 2,
                       display: 'flex',
-                      alignItems: 'center',
                       justifyContent: 'center',
-                      backgroundColor: '#1a1a1a',
-                      borderRadius: '8px',
-                      aspectRatio: '16/9'
+                      gap: 1
                     }}>
-                      <Typography color="text.secondary">
-                        Waiting for connection...
-                      </Typography>
+                      <IconButton 
+                        size="small"
+                        onClick={() => {
+                          const videoTrack = localStream.getVideoTracks()[0];
+                          if (videoTrack) {
+                            videoTrack.enabled = !videoTrack.enabled;
+                            setIsVideoEnabled(videoTrack.enabled);
+                          }
+                        }}
+                        sx={{ 
+                          bgcolor: 'rgba(0,0,0,0.6)',
+                          color: 'white',
+                          '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
+                        }}
+                      >
+                        {isVideoEnabled ? <VideocamIcon /> : <VideocamOffIcon />}
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          const audioTrack = localStream.getAudioTracks()[0];
+                          if (audioTrack) {
+                            audioTrack.enabled = !audioTrack.enabled;
+                            setIsAudioEnabled(audioTrack.enabled);
+                          }
+                        }}
+                        sx={{ 
+                          bgcolor: 'rgba(0,0,0,0.6)',
+                          color: 'white',
+                          '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
+                        }}
+                      >
+                        {isAudioEnabled ? <MicIcon /> : <MicOffIcon />}
+                      </IconButton>
                     </Box>
-                  )}
-                  <Box sx={{ 
-                    position: 'absolute', 
-                    top: 8, 
-                    left: 8, 
-                    color: 'white', 
-                    textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-                    bgcolor: 'rgba(0,0,0,0.4)',
-                    px: 1,
-                    py: 0.5,
-                    borderRadius: 1
-                  }}>
-                    {remoteStream ? 'Remote User' : 'Waiting for connection...'}
+                    <Box sx={{ 
+                      position: 'absolute', 
+                      top: 8, 
+                      left: 8, 
+                      color: 'white', 
+                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                      bgcolor: 'rgba(0,0,0,0.4)',
+                      px: 1,
+                      py: 0.5,
+                      borderRadius: 1
+                    }}>
+                      You
+                    </Box>
+                  </Box>
+                  <Box sx={{ width: '50%', position: 'relative' }}>
+                    <video
+                      ref={remoteVideoRef}
+                      autoPlay
+                      playsInline
+                      muted={false}
+                      controls
+                      style={{ 
+                        width: '100%', 
+                        borderRadius: '8px', 
+                        backgroundColor: '#1a1a1a',
+                        display: remoteStream ? 'block' : 'none'
+                      }}
+                      onLoadedMetadata={(e) => {
+                        console.log('Remote video metadata loaded');
+                        e.target.play().catch(err => console.error('Play failed:', err));
+                      }}
+                      onPlay={() => console.log('Remote video playing')}
+                      onError={(e) => console.error('Video error:', e)}
+                    />
+                    {!remoteStream && (
+                      <Box sx={{ 
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: '#1a1a1a',
+                        borderRadius: '8px',
+                        aspectRatio: '16/9'
+                      }}>
+                        <Typography color="text.secondary">
+                          Waiting for connection...
+                        </Typography>
+                      </Box>
+                    )}
+                    <Box sx={{ 
+                      position: 'absolute', 
+                      top: 8, 
+                      left: 8, 
+                      color: 'white', 
+                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                      bgcolor: 'rgba(0,0,0,0.4)',
+                      px: 1,
+                      py: 0.5,
+                      borderRadius: 1
+                    }}>
+                      {remoteStream ? 'Remote User' : 'Waiting for connection...'}
+                    </Box>
                   </Box>
                 </Box>
-              </Box>
-            )}
+              )}
+            </Box>
           )}
         </DialogContent>
         {incomingCall && (
