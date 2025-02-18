@@ -19,6 +19,7 @@ const VideoCall = ({ username, open, onClose }) => {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const localVideoRef = useRef();
   const remoteVideoRef = useRef();
+  const [connectionState, setConnectionState] = useState('disconnected');
 
   useEffect(() => {
     if (open) {
@@ -49,10 +50,12 @@ const VideoCall = ({ username, open, onClose }) => {
           ]
         },
         debug: 3,
-        host: 'peerjs-server.herokuapp.com',
+        host: '0.peerjs.com',
         secure: true,
         port: 443,
         path: '/',
+        pingInterval: 5000,
+        retryTimer: 3000,
         config: {
           iceTransportPolicy: 'relay',
           reconnectTimer: 3000,
@@ -62,8 +65,9 @@ const VideoCall = ({ username, open, onClose }) => {
       setPeer(newPeer);
 
       newPeer.on('open', (id) => {
-        console.log('My peer ID is:', id);
+        console.log('Successfully connected to PeerJS server. My peer ID is:', id);
         setPeerId(id);
+        setConnectionState('connected');
         startLocalVideo();
       });
 
@@ -89,12 +93,22 @@ const VideoCall = ({ username, open, onClose }) => {
 
       newPeer.on('disconnected', () => {
         console.log('Connection to PeerJS server lost. Attempting to reconnect...');
-        setTimeout(() => {
-          if (newPeer) {
-            console.log('Attempting to reconnect to PeerJS server...');
-            newPeer.reconnect();
+        setConnectionState('reconnecting');
+        
+        const reconnectAttempt = async () => {
+          try {
+            if (newPeer && newPeer.disconnected) {
+              console.log('Attempting to reconnect to PeerJS server...');
+              await newPeer.reconnect();
+            }
+          } catch (err) {
+            console.error('Reconnection attempt failed:', err);
+            // Try again after delay
+            setTimeout(reconnectAttempt, 3000);
           }
-        }, 3000);
+        };
+
+        reconnectAttempt();
       });
 
       newPeer.on('error', (err) => {
@@ -102,10 +116,33 @@ const VideoCall = ({ username, open, onClose }) => {
         if (err.type === 'peer-unavailable') {
           console.log('Peer is not available. They may be offline or behind a restrictive firewall.');
         } else if (err.type === 'network') {
-          console.log('Network error occurred. Check your internet connection.');
+          console.log('Network error occurred. Checking connection...');
+          setConnectionState('checking');
+          // Attempt to reconnect after network error
+          setTimeout(() => {
+            if (newPeer && newPeer.disconnected) {
+              newPeer.reconnect();
+            }
+          }, 3000);
         } else if (err.type === 'disconnected') {
           console.log('Connection to signaling server lost. Attempting to reconnect...');
-          setTimeout(() => newPeer.reconnect(), 3000);
+          setConnectionState('reconnecting');
+          setTimeout(() => {
+            if (newPeer && newPeer.disconnected) {
+              newPeer.reconnect();
+            }
+          }, 3000);
+        } else if (err.type === 'server-error') {
+          console.log('PeerJS server error. Attempting to reconnect to a different server...');
+          setConnectionState('switching_server');
+          // Destroy current peer and create new one with fallback server
+          newPeer.destroy();
+          const fallbackPeer = new Peer(uniquePeerId, {
+            ...newPeer.options,
+            host: 'peer.metered.live',
+            path: '/peerjs',
+          });
+          setPeer(fallbackPeer);
         }
       });
 
@@ -211,7 +248,21 @@ const VideoCall = ({ username, open, onClose }) => {
       </DialogTitle>
       <DialogContent>
         <Box sx={{ mb: 2 }}>
-          <Typography variant="body2" sx={{ mb: 1 }}>Your ID: {peerId}</Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Your ID: {peerId} 
+            {connectionState !== 'connected' && (
+              <Typography 
+                component="span" 
+                color="error" 
+                sx={{ ml: 1 }}
+              >
+                ({connectionState === 'reconnecting' ? 'Reconnecting...' : 
+                  connectionState === 'checking' ? 'Checking connection...' :
+                  connectionState === 'switching_server' ? 'Switching servers...' : 
+                  'Disconnected'})
+              </Typography>
+            )}
+          </Typography>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <TextField
               fullWidth
