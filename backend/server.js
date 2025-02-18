@@ -202,6 +202,9 @@ const io = socketIo(server, {
 // Store typing users
 let typingUsers = new Set();
 
+// Store active video users
+const activeVideoUsers = new Map();
+
 // Socket.IO connection handling
 io.on('connection', async (socket) => {
   const username = socket.handshake.query.username;
@@ -261,13 +264,38 @@ io.on('connection', async (socket) => {
     io.emit('typing-update', Array.from(typingUsers));
   });
 
+  // Handle video call users
+  socket.on('user_joined_video', ({ username, peerId }) => {
+    activeVideoUsers.set(username, { username, peerId, socketId: socket.id });
+    io.emit('active_video_users', Array.from(activeVideoUsers.values()));
+  });
+
+  socket.on('user_left_video', ({ username }) => {
+    activeVideoUsers.delete(username);
+    io.emit('active_video_users', Array.from(activeVideoUsers.values()));
+  });
+
+  socket.on('video_call_initiated', ({ from, to }) => {
+    const targetUser = Array.from(activeVideoUsers.values()).find(user => user.username === to);
+    if (targetUser) {
+      io.to(targetUser.socketId).emit('incoming_video_call', { from });
+    }
+  });
+
+  socket.on('video_call_rejected', ({ from, to }) => {
+    const targetUser = Array.from(activeVideoUsers.values()).find(user => user.username === to);
+    if (targetUser) {
+      io.to(targetUser.socketId).emit('video_call_rejected', { from });
+    }
+  });
+
   // Handle disconnection
   socket.on('disconnect', () => {
     console.log('Client disconnected:', username);
-    if (username) {
-      typingUsers.delete(username);
-      io.emit('typing-update', Array.from(typingUsers));
-    }
+    typingUsers.delete(username);
+    io.emit('typing-update', Array.from(typingUsers));
+    activeVideoUsers.delete(username);
+    io.emit('active_video_users', Array.from(activeVideoUsers.values()));
   });
 
   // Error handling
