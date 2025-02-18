@@ -17,10 +17,11 @@ import {
   Link,
   CircularProgress
 } from '@mui/material';
-import { Send as SendIcon, EmojiEmotions as EmojiIcon, Logout as LogoutIcon } from '@mui/icons-material';
+import { Send as SendIcon, EmojiEmotions as EmojiIcon, Logout as LogoutIcon, Videocam as VideocamIcon } from '@mui/icons-material';
 import io from 'socket.io-client';
 import axios from 'axios';
 import { API_URL, SOCKET_URL, API_CONFIG } from '../config';
+import VideoCall from './VideoCall';
 
 // Configure axios to include credentials
 axios.defaults.withCredentials = true;
@@ -276,6 +277,7 @@ const Chat = () => {
   const socketRef = useRef();
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
 
   const checkAuth = async () => {
     try {
@@ -476,229 +478,216 @@ const Chat = () => {
   }
 
   return (
-    <Box sx={{ 
-      height: '100vh', 
-      display: 'flex', 
-      flexDirection: 'column',
-      overflow: 'hidden'
-    }}>
-      <AppBar 
-        position="static" 
-        sx={{ 
-          background: 'linear-gradient(45deg, #1976D2 30%, #2196F3 90%)',
-          boxShadow: '0 3px 5px 2px rgba(33, 203, 243, .3)'
-        }}
-      >
-        <Toolbar>
-          <Avatar 
-            sx={{ 
-              bgcolor: getAvatarColor(username),
-              mr: 2
-            }}
-          >
-            {username.charAt(0).toUpperCase()}
-          </Avatar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            KNchat
-          </Typography>
-          <Typography variant="subtitle1" sx={{ fontWeight: 500, mr: 2 }}>
-            {username}
-          </Typography>
-          <IconButton 
-            color="inherit" 
-            onClick={handleLogout}
-            sx={{
-              '&:hover': {
-                bgcolor: 'rgba(255, 255, 255, 0.1)',
-              },
-            }}
-          >
-            <LogoutIcon />
-          </IconButton>
-        </Toolbar>
-      </AppBar>
-
-      <Container sx={{ 
-        flex: 1, 
-        display: 'flex', 
-        flexDirection: 'column', 
-        py: 3,
-        overflow: 'hidden'
-      }}>
-        <Box sx={{ 
-          position: 'relative', 
-          flex: 1, 
-          display: 'flex', 
-          flexDirection: 'column',
-          overflow: 'hidden'
-        }}>
-          <Paper 
-            elevation={6} 
-            sx={{ 
+    <Container maxWidth="md" sx={{ height: '100vh', display: 'flex', flexDirection: 'column', py: 2 }}>
+      {username && (
+        <>
+          <AppBar position="static" color="transparent" elevation={0}>
+            <Toolbar>
+              <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+                Chat Room
+              </Typography>
+              <IconButton
+                color="primary"
+                onClick={() => setIsVideoCallOpen(true)}
+                sx={{ mr: 1 }}
+              >
+                <VideocamIcon />
+              </IconButton>
+              <IconButton color="primary" onClick={handleLogout}>
+                <LogoutIcon />
+              </IconButton>
+            </Toolbar>
+          </AppBar>
+          
+          <Container sx={{ 
+            flex: 1, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            py: 3,
+            overflow: 'hidden'
+          }}>
+            <Box sx={{ 
+              position: 'relative', 
               flex: 1, 
-              mb: 2, 
-              overflow: 'hidden',
-              display: 'flex',
+              display: 'flex', 
               flexDirection: 'column',
-              maxHeight: 'calc(100vh - 180px)',
-              borderRadius: 3,
-              bgcolor: 'background.paper',
-              '&::-webkit-scrollbar': {
-                width: '8px',
-              },
-              '&::-webkit-scrollbar-track': {
-                background: '#1a2027',
-                borderRadius: '4px',
-              },
-              '&::-webkit-scrollbar-thumb': {
-                background: '#2f3c47',
-                borderRadius: '4px',
-                '&:hover': {
-                  background: '#3f4c57',
-                },
-              },
-            }}
-          >
-            <List sx={{ 
-              p: 2,
-              overflow: 'auto',
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column'
+              overflow: 'hidden'
             }}>
-              {messages.map((message, index) => (
-                <Fade in={true} key={index}>
-                  <ListItem
-                    sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: message.username === username ? 'flex-end' : 'flex-start',
-                      p: 1,
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: 1,
-                        maxWidth: '70%',
-                      }}
-                    >
-                      {message.username !== username && (
-                        <Avatar 
-                          sx={{ 
-                            bgcolor: getAvatarColor(message.username),
-                            width: 32,
-                            height: 32,
-                          }}
-                        >
-                          {message.username.charAt(0).toUpperCase()}
-                        </Avatar>
-                      )}
-                      <Box>
-                        {message.username !== username && (
-                          <Typography
-                            variant="caption"
-                            sx={{ ml: 1, color: 'text.secondary' }}
-                          >
-                            {message.username}
-                          </Typography>
-                        )}
-                        <Paper
-                          elevation={1}
+              <Paper 
+                elevation={6} 
+                sx={{ 
+                  flex: 1, 
+                  mb: 2, 
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  maxHeight: 'calc(100vh - 180px)',
+                  borderRadius: 3,
+                  bgcolor: 'background.paper',
+                  '&::-webkit-scrollbar': {
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    background: '#1a2027',
+                    borderRadius: '4px',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    background: '#2f3c47',
+                    borderRadius: '4px',
+                    '&:hover': {
+                      background: '#3f4c57',
+                    },
+                  },
+                }}
+              >
+                <List sx={{ 
+                  p: 2,
+                  overflow: 'auto',
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}>
+                  {messages.map((message, index) => (
+                    <Fade in={true} key={index}>
+                      <ListItem
+                        sx={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: message.username === username ? 'flex-end' : 'flex-start',
+                          p: 1,
+                        }}
+                      >
+                        <Box
                           sx={{
-                            p: 1.5,
-                            borderRadius: 2,
-                            bgcolor: message.username === username ? 'primary.dark' : '#2f3c47',
-                            color: 'text.primary',
-                            ml: message.username === username ? 2 : 0,
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 1,
+                            maxWidth: '70%',
                           }}
                         >
-                          <Typography variant="body1">
-                            {message.content}
-                          </Typography>
-                        </Paper>
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            display: 'block',
-                            mt: 0.5,
-                            ml: 1,
-                            color: 'text.secondary',
-                          }}
-                        >
-                          {new Date(message.timestamp).toLocaleTimeString()}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </ListItem>
-                </Fade>
-              ))}
-              <div ref={messagesEndRef} />
-            </List>
-          </Paper>
+                          {message.username !== username && (
+                            <Avatar 
+                              sx={{ 
+                                bgcolor: getAvatarColor(message.username),
+                                width: 32,
+                                height: 32,
+                              }}
+                            >
+                              {message.username.charAt(0).toUpperCase()}
+                            </Avatar>
+                          )}
+                          <Box>
+                            {message.username !== username && (
+                              <Typography
+                                variant="caption"
+                                sx={{ ml: 1, color: 'text.secondary' }}
+                              >
+                                {message.username}
+                              </Typography>
+                            )}
+                            <Paper
+                              elevation={1}
+                              sx={{
+                                p: 1.5,
+                                borderRadius: 2,
+                                bgcolor: message.username === username ? 'primary.dark' : '#2f3c47',
+                                color: 'text.primary',
+                                ml: message.username === username ? 2 : 0,
+                              }}
+                            >
+                              <Typography variant="body1">
+                                {message.content}
+                              </Typography>
+                            </Paper>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                display: 'block',
+                                mt: 0.5,
+                                ml: 1,
+                                color: 'text.secondary',
+                              }}
+                            >
+                              {new Date(message.timestamp).toLocaleTimeString()}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </ListItem>
+                    </Fade>
+                  ))}
+                  <div ref={messagesEndRef} />
+                </List>
+              </Paper>
 
-          <TypingIndicator typingUsers={typingUsers} currentUser={username} />
+              <TypingIndicator typingUsers={typingUsers} currentUser={username} />
 
-          <Paper
-            component="form"
-            onSubmit={handleSendMessage}
-            elevation={3}
-            sx={{
-              p: 2,
-              borderRadius: 3,
-              display: 'flex',
-              gap: 2,
-              alignItems: 'center',
-              bgcolor: 'background.paper',
-            }}
-          >
-            <IconButton color="primary" sx={{ p: 1 }}>
-              <EmojiIcon />
-            </IconButton>
-            <TextField
-              fullWidth
-              variant="standard"
-              placeholder="Type a message..."
-              value={newMessage}
-              onChange={(e) => {
-                setNewMessage(e.target.value);
-                handleTyping();
-              }}
-              InputProps={{
-                disableUnderline: true,
-              }}
-              sx={{ 
-                '& .MuiInputBase-root': {
-                  padding: 1,
-                  color: 'text.primary',
-                },
-                '& .MuiInputBase-input::placeholder': {
-                  color: 'text.secondary',
-                  opacity: 0.7,
-                },
-              }}
-            />
-            <IconButton 
-              type="submit"
-              color="primary"
-              disabled={!newMessage.trim()}
-              sx={{
-                p: 1,
-                bgcolor: newMessage.trim() ? 'primary.main' : 'action.disabled',
-                color: 'white',
-                '&:hover': {
-                  bgcolor: 'primary.dark',
-                },
-                transition: 'all 0.2s ease-in-out',
-              }}
-            >
-              <SendIcon />
-            </IconButton>
-          </Paper>
-        </Box>
-      </Container>
-    </Box>
+              <Paper
+                component="form"
+                onSubmit={handleSendMessage}
+                elevation={3}
+                sx={{
+                  p: 2,
+                  borderRadius: 3,
+                  display: 'flex',
+                  gap: 2,
+                  alignItems: 'center',
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <IconButton color="primary" sx={{ p: 1 }}>
+                  <EmojiIcon />
+                </IconButton>
+                <TextField
+                  fullWidth
+                  variant="standard"
+                  placeholder="Type a message..."
+                  value={newMessage}
+                  onChange={(e) => {
+                    setNewMessage(e.target.value);
+                    handleTyping();
+                  }}
+                  InputProps={{
+                    disableUnderline: true,
+                  }}
+                  sx={{ 
+                    '& .MuiInputBase-root': {
+                      padding: 1,
+                      color: 'text.primary',
+                    },
+                    '& .MuiInputBase-input::placeholder': {
+                      color: 'text.secondary',
+                      opacity: 0.7,
+                    },
+                  }}
+                />
+                <IconButton 
+                  type="submit"
+                  color="primary"
+                  disabled={!newMessage.trim()}
+                  sx={{
+                    p: 1,
+                    bgcolor: newMessage.trim() ? 'primary.main' : 'action.disabled',
+                    color: 'white',
+                    '&:hover': {
+                      bgcolor: 'primary.dark',
+                    },
+                    transition: 'all 0.2s ease-in-out',
+                  }}
+                >
+                  <SendIcon />
+                </IconButton>
+              </Paper>
+            </Box>
+          </Container>
+          
+          <VideoCall
+            username={username}
+            open={isVideoCallOpen}
+            onClose={() => setIsVideoCallOpen(false)}
+          />
+        </>
+      )}
+    </Container>
   );
 };
 
