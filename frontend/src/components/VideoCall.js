@@ -43,6 +43,8 @@ const VideoCall = ({ username, open, onClose, socket }) => {
   const localVideoRef = useRef();
   const remoteVideoRef = useRef();
   const peerRef = useRef();
+  const [iceConnectionState, setIceConnectionState] = useState('new');
+  const [isConnecting, setIsConnecting] = useState(false);
 
   useEffect(() => {
     if (!socket || !open) return;
@@ -213,6 +215,42 @@ const VideoCall = ({ username, open, onClose, socket }) => {
     };
   }, [localStream]);
 
+  const getXirsysIceServers = async () => {
+    try {
+      const response = await fetch('https://global.xirsys.net/_turn/knchat', {
+        method: 'PUT',
+        headers: {
+          'Authorization': 'Basic ' + btoa.from('knah1d:7fd3cb54-edfd-11ef-a4fe-0242ac130003').toString('base64'),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          format: 'urls',
+          expire: '5'
+        })
+      });
+
+      const data = await response.json();
+      console.log('Xirsys ICE servers:', data.v.iceServers);
+      return data.v.iceServers;
+    } catch (error) {
+      console.error('Failed to get Xirsys ICE servers:', error);
+      // Fallback to free STUN/TURN servers if Xirsys fails
+      return [
+        { urls: 'stun:stun.l.google.com:19302' },
+        {
+          urls: [
+            'turn:a.relay.metered.ca:80',
+            'turn:a.relay.metered.ca:80?transport=tcp',
+            'turn:a.relay.metered.ca:443',
+            'turn:a.relay.metered.ca:443?transport=tcp'
+          ],
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ];
+    }
+  };
+
   useEffect(() => {
     if (!open || !socket || !isVideoInitialized) return;
 
@@ -221,31 +259,42 @@ const VideoCall = ({ username, open, onClose, socket }) => {
 
     const initializePeer = async () => {
       try {
+        setIsConnecting(true);
+        const iceServers = await getXirsysIceServers();
         const randomId = Math.random().toString(36).substring(7);
         const uniquePeerId = `${username}_${randomId}`;
 
         const newPeer = new Peer(uniquePeerId, {
-          config: {
-            iceServers: [
-              { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:stun1.l.google.com:19302' },
-              {
-                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-              }
-            ],
-            iceCandidatePoolSize: 10
-          },
           debug: 3,
-          host: '0.peerjs.com',
+          host: 'peerjs.knchat.onrender.com',
           secure: true,
           port: 443,
           path: '/',
-          pingInterval: 3000
+          pingInterval: 3000,
+          config: {
+            iceServers,
+            iceCandidatePoolSize: 10,
+            iceTransportPolicy: 'all',
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require',
+            sdpSemantics: 'unified-plan'
+          }
         });
 
         peerRef.current = newPeer;
+
+        // Enhanced connection monitoring
+        newPeer.on('iceStateChanged', (state) => {
+          console.log('ICE connection state changed:', state);
+          setIceConnectionState(state);
+          
+          if (state === 'failed') {
+            console.log('ICE connection failed, attempting to restart ICE');
+            if (currentCall) {
+              currentCall.peerConnection.restartIce();
+            }
+          }
+        });
 
         newPeer.on('open', (id) => {
           if (!mounted) return;
@@ -254,23 +303,59 @@ const VideoCall = ({ username, open, onClose, socket }) => {
           setPeer(newPeer);
           socket.emit('user_joined_video', { username, peerId: id });
           setIsInitializing(false);
+          setIsConnecting(false);
         });
 
         newPeer.on('error', (err) => {
           console.error('PeerJS error:', err);
           if (!mounted) return;
+          
+          let errorMessage = 'Connection error occurred. ';
+          if (err.type === 'network') {
+            errorMessage += 'Please check your internet connection.';
+          } else if (err.type === 'disconnected') {
+            errorMessage += 'Connection to the server was lost. Attempting to reconnect...';
+            // Attempt to reconnect
+            setTimeout(() => {
+              if (mounted) initializePeer();
+            }, 3000);
+          } else if (err.type === 'server-error') {
+            errorMessage += 'Unable to reach the signaling server. Please try again later.';
+          } else if (err.type === 'peer-unavailable') {
+            errorMessage += 'The other user is not available or may have left the call.';
+          } else if (err.type === 'webrtc') {
+            errorMessage += 'WebRTC connection failed. This might be due to network restrictions.';
+          }
+          
           setNotification({
             open: true,
-            message: 'Connection error occurred. Please try again.',
+            message: errorMessage,
             severity: 'error'
           });
+          setIsConnecting(false);
           setIsInitializing(false);
         });
 
+        // Enhanced call handling
         newPeer.on('call', (call) => {
           if (!mounted) return;
-          const callerUsername = call.metadata?.username;
-          setIncomingCall({ call, username: callerUsername });
+          console.log('Incoming call from:', call.metadata?.username);
+          
+          // Monitor the peer connection
+          const pc = call.peerConnection;
+          pc.oniceconnectionstatechange = () => {
+            console.log('ICE Connection State:', pc.iceConnectionState);
+            if (pc.iceConnectionState === 'failed') {
+              console.log('Attempting to restart ICE connection');
+              pc.restartIce();
+            }
+          };
+
+          pc.onconnectionstatechange = () => {
+            console.log('Connection State:', pc.connectionState);
+          };
+
+          setIncomingCall({ call, username: call.metadata?.username });
         });
 
       } catch (err) {
@@ -278,10 +363,11 @@ const VideoCall = ({ username, open, onClose, socket }) => {
         if (mounted) {
           setNotification({
             open: true,
-            message: 'Failed to initialize video call connection',
+            message: 'Failed to initialize video call connection. Please try again.',
             severity: 'error'
           });
           setIsInitializing(false);
+          setIsConnecting(false);
         }
       }
     };
@@ -291,10 +377,11 @@ const VideoCall = ({ username, open, onClose, socket }) => {
     return () => {
       mounted = false;
       if (peerRef.current) {
+        console.log('Destroying peer connection');
         peerRef.current.destroy();
       }
     };
-  }, [open, socket, isVideoInitialized, username]);
+  }, [open, socket, isVideoInitialized, username, currentCall]);
 
   const debugVideoElement = () => {
     if (localVideoRef.current) {
@@ -335,7 +422,22 @@ const VideoCall = ({ username, open, onClose, socket }) => {
   };
 
   const handleCallConnection = (call) => {
+    // Monitor the peer connection
+    const pc = call.peerConnection;
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE Connection State:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        console.log('Attempting to restart ICE connection');
+        pc.restartIce();
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('Connection State:', pc.connectionState);
+    };
+
     call.on('stream', (remoteVideoStream) => {
+      console.log('Received remote stream');
       setRemoteStream(remoteVideoStream);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteVideoStream;
@@ -343,6 +445,7 @@ const VideoCall = ({ username, open, onClose, socket }) => {
     });
 
     call.on('close', () => {
+      console.log('Call closed');
       setRemoteStream(null);
       setCurrentCall(null);
     });
@@ -351,7 +454,7 @@ const VideoCall = ({ username, open, onClose, socket }) => {
       console.error('Call error:', err);
       setNotification({
         open: true,
-        message: 'Call error occurred',
+        message: 'Call error occurred. The connection may be unstable.',
         severity: 'error'
       });
     });
@@ -396,11 +499,11 @@ const VideoCall = ({ username, open, onClose, socket }) => {
 
   return (
     <>
-      <Dialog 
-        open={open} 
+    <Dialog 
+      open={open} 
         onClose={onClose}
-        maxWidth="md"
-        fullWidth
+      maxWidth="md"
+      fullWidth
         TransitionProps={{
           onExited: () => {
             if (localStream) {
@@ -418,18 +521,18 @@ const VideoCall = ({ username, open, onClose, socket }) => {
             socket.emit('user_left_video', { username, peerId });
           }
         }}
-      >
-        <DialogTitle>
-          Video Call
-          <IconButton
-            aria-label="close"
+    >
+      <DialogTitle>
+        Video Call
+        <IconButton
+          aria-label="close"
             onClick={onClose}
-            sx={{ position: 'absolute', right: 8, top: 8 }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
+          sx={{ position: 'absolute', right: 8, top: 8 }}
+        >
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+      <DialogContent>
           {isInitializing ? (
             <Box sx={{ 
               display: 'flex', 
@@ -457,13 +560,13 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                   overflow: 'hidden'
                 }}
               >
-                <video
-                  ref={localVideoRef}
-                  autoPlay
+            <video
+              ref={localVideoRef}
+              autoPlay
                   playsInline
-                  muted
-                  style={{ 
-                    width: '100%',
+              muted
+              style={{ 
+                width: '100%', 
                     height: '100%',
                     objectFit: 'cover',
                     transform: 'scaleX(-1)',
@@ -471,38 +574,38 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                   }}
                 />
                 
-                {!isVideoEnabled && (
-                  <Box sx={{ 
+            {!isVideoEnabled && (
+              <Box sx={{ 
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                     backgroundColor: '#1a1a1a',
                     zIndex: 1
-                  }}>
-                    <Typography variant="body1" color="white">
-                      Camera Off
-                    </Typography>
-                  </Box>
-                )}
+              }}>
+                <Typography variant="body1" color="white">
+                  Camera Off
+                </Typography>
+              </Box>
+            )}
 
-                <Box sx={{ 
-                  position: 'absolute', 
-                  bottom: 8, 
-                  left: 0, 
-                  right: 0,
-                  px: 2,
-                  display: 'flex',
-                  justifyContent: 'center',
+            <Box sx={{ 
+              position: 'absolute', 
+              bottom: 8, 
+              left: 0, 
+              right: 0,
+              px: 2,
+              display: 'flex',
+              justifyContent: 'center',
                   gap: 1,
                   zIndex: 2
-                }}>
-                  <IconButton 
-                    size="small"
+            }}>
+              <IconButton 
+                size="small"
                     onClick={() => {
                       if (localStream) {
                         const videoTrack = localStream.getVideoTracks()[0];
@@ -512,16 +615,16 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                         }
                       }
                     }}
-                    sx={{ 
-                      bgcolor: 'rgba(0,0,0,0.6)',
-                      color: 'white',
-                      '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
-                    }}
-                  >
-                    {isVideoEnabled ? <VideocamIcon /> : <VideocamOffIcon />}
-                  </IconButton>
-                  <IconButton
-                    size="small"
+                sx={{ 
+                  bgcolor: 'rgba(0,0,0,0.6)',
+                  color: 'white',
+                  '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
+                }}
+              >
+                {isVideoEnabled ? <VideocamIcon /> : <VideocamOffIcon />}
+              </IconButton>
+              <IconButton
+                size="small"
                     onClick={() => {
                       if (localStream) {
                         const audioTrack = localStream.getAudioTracks()[0];
@@ -531,16 +634,16 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                         }
                       }
                     }}
-                    sx={{ 
-                      bgcolor: 'rgba(0,0,0,0.6)',
-                      color: 'white',
-                      '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
-                    }}
-                  >
-                    {isAudioEnabled ? <MicIcon /> : <MicOffIcon />}
-                  </IconButton>
-                </Box>
-              </Box>
+                sx={{ 
+                  bgcolor: 'rgba(0,0,0,0.6)',
+                  color: 'white',
+                  '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
+                }}
+              >
+                {isAudioEnabled ? <MicIcon /> : <MicOffIcon />}
+              </IconButton>
+            </Box>
+            </Box>
               {!currentCall && !incomingCall ? (
                 <List>
                   {activeUsers.map((user) => (
@@ -569,10 +672,10 @@ const VideoCall = ({ username, open, onClose, socket }) => {
               ) : (
                 <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
                   <Box sx={{ width: '100%', position: 'relative' }}>
-                    <video
-                      ref={remoteVideoRef}
-                      autoPlay
-                      playsInline
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
                       muted={false}
                       controls
                       style={{ 
@@ -607,25 +710,25 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                         </Typography>
                       </Box>
                     )}
-                    <Box sx={{ 
-                      position: 'absolute', 
-                      top: 8, 
-                      left: 8, 
-                      color: 'white', 
-                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-                      bgcolor: 'rgba(0,0,0,0.4)',
-                      px: 1,
-                      py: 0.5,
-                      borderRadius: 1
-                    }}>
+            <Box sx={{ 
+              position: 'absolute', 
+              top: 8, 
+              left: 8, 
+              color: 'white', 
+              textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+              bgcolor: 'rgba(0,0,0,0.4)',
+              px: 1,
+              py: 0.5,
+              borderRadius: 1
+            }}>
                       {remoteStream ? 'Remote User' : 'Waiting for connection...'}
-                    </Box>
-                  </Box>
-                </Box>
+            </Box>
+          </Box>
+        </Box>
               )}
             </Box>
           )}
-        </DialogContent>
+      </DialogContent>
         {incomingCall && (
           <DialogActions sx={{ justifyContent: 'center', pb: 2 }}>
             <Button
@@ -658,7 +761,7 @@ const VideoCall = ({ username, open, onClose, socket }) => {
             </Button>
           </DialogActions>
         )}
-      </Dialog>
+    </Dialog>
 
       <Snackbar
         open={notification.open}
