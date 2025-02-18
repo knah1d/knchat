@@ -124,9 +124,45 @@ const VideoCall = ({ username, open, onClose }) => {
           monitorIceConnection(call);
           
           call.on('stream', (remoteVideoStream) => {
+            console.log('Received remote stream:', {
+              id: remoteVideoStream.id,
+              active: remoteVideoStream.active,
+              tracks: remoteVideoStream.getTracks().map(track => ({
+                kind: track.kind,
+                enabled: track.enabled,
+                readyState: track.readyState
+              }))
+            });
+            
             setRemoteStream(remoteVideoStream);
+            
+            // Ensure video tracks are enabled and active
+            remoteVideoStream.getVideoTracks().forEach(track => {
+              console.log('Video track:', {
+                enabled: track.enabled,
+                readyState: track.readyState,
+                muted: track.muted
+              });
+              track.enabled = true;
+            });
+
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteVideoStream;
+              
+              // Add loadedmetadata event listener
+              remoteVideoRef.current.onloadedmetadata = () => {
+                console.log('Remote video metadata loaded');
+                remoteVideoRef.current.play().catch(err => {
+                  console.error('Failed to play remote video:', err);
+                });
+              };
+
+              // Add error event listener
+              remoteVideoRef.current.onerror = (err) => {
+                console.error('Remote video error:', err);
+              };
+            } else {
+              console.error('Remote video ref is not available');
             }
           });
         } catch (err) {
@@ -224,10 +260,45 @@ const VideoCall = ({ username, open, onClose }) => {
       monitorIceConnection(call);
       
       call.on('stream', (remoteVideoStream) => {
-        console.log('Received remote stream');
+        console.log('Received remote stream:', {
+          id: remoteVideoStream.id,
+          active: remoteVideoStream.active,
+          tracks: remoteVideoStream.getTracks().map(track => ({
+            kind: track.kind,
+            enabled: track.enabled,
+            readyState: track.readyState
+          }))
+        });
+        
         setRemoteStream(remoteVideoStream);
+        
+        // Ensure video tracks are enabled and active
+        remoteVideoStream.getVideoTracks().forEach(track => {
+          console.log('Video track:', {
+            enabled: track.enabled,
+            readyState: track.readyState,
+            muted: track.muted
+          });
+          track.enabled = true;
+        });
+
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = remoteVideoStream;
+          
+          // Add loadedmetadata event listener
+          remoteVideoRef.current.onloadedmetadata = () => {
+            console.log('Remote video metadata loaded');
+            remoteVideoRef.current.play().catch(err => {
+              console.error('Failed to play remote video:', err);
+            });
+          };
+
+          // Add error event listener
+          remoteVideoRef.current.onerror = (err) => {
+            console.error('Remote video error:', err);
+          };
+        } else {
+          console.error('Remote video ref is not available');
         }
       });
 
@@ -417,8 +488,30 @@ const VideoCall = ({ username, open, onClose }) => {
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              style={{ width: '100%', borderRadius: '8px', backgroundColor: '#1a1a1a' }}
+              style={{ 
+                width: '100%', 
+                borderRadius: '8px', 
+                backgroundColor: '#1a1a1a',
+                objectFit: 'contain'
+              }}
             />
+            {remoteStream && !remoteStream.active && (
+              <Box sx={{ 
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: 'rgba(0,0,0,0.7)'
+              }}>
+                <Typography color="error">
+                  Remote stream disconnected
+                </Typography>
+              </Box>
+            )}
             <Box sx={{ 
               position: 'absolute', 
               top: 8, 
@@ -430,7 +523,7 @@ const VideoCall = ({ username, open, onClose }) => {
               py: 0.5,
               borderRadius: 1
             }}>
-              Remote User
+              {remoteStream ? 'Remote User' : 'Waiting for connection...'}
             </Box>
           </Box>
         </Box>
