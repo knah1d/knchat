@@ -79,22 +79,27 @@ const VideoCall = ({ username, open, onClose, socket }) => {
 
       try {
         console.log('Initializing video...');
+        setIsInitializing(true);
         
         // Clear any existing streams
         if (localStream) {
+          console.log('Stopping existing stream');
           localStream.getTracks().forEach(track => track.stop());
           setLocalStream(null);
         }
 
+        // Reset video element
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = null;
         }
 
-        // Request camera access
+        // Request camera access with specific constraints
         const mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 }
+            width: { min: 640, ideal: 1280, max: 1920 },
+            height: { min: 480, ideal: 720, max: 1080 },
+            aspectRatio: 16/9,
+            facingMode: 'user'
           },
           audio: true
         });
@@ -106,22 +111,52 @@ const VideoCall = ({ username, open, onClose, socket }) => {
 
         console.log('Got media stream:', mediaStream.getTracks());
 
+        // Ensure video track is enabled
+        const videoTrack = mediaStream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.enabled = true;
+          console.log('Video track:', videoTrack.label, 'enabled:', videoTrack.enabled);
+        }
+
+        // Set stream to state
+        setLocalStream(mediaStream);
+        setIsVideoEnabled(true);
+
         // Set up video element
         if (localVideoRef.current) {
+          console.log('Setting up video element');
           localVideoRef.current.srcObject = mediaStream;
+          localVideoRef.current.muted = true; // Important: mute local video
           
-          // Force a play attempt
+          // Add all event listeners for debugging
+          localVideoRef.current.onloadedmetadata = () => {
+            console.log('Video metadata loaded');
+            debugVideoElement();
+          };
+          
+          localVideoRef.current.oncanplay = () => {
+            console.log('Video can play');
+            debugVideoElement();
+            localVideoRef.current.play()
+              .then(() => console.log('Video playing'))
+              .catch(err => console.warn('Autoplay prevented:', err));
+          };
+
+          localVideoRef.current.onerror = (error) => {
+            console.error('Video element error:', error);
+          };
+
+          // Force play attempt
           try {
             await localVideoRef.current.play();
-            console.log('Local video playing');
-          } catch (playError) {
-            console.warn('Auto-play failed:', playError);
+            console.log('Initial play successful');
+          } catch (err) {
+            console.warn('Initial play failed, waiting for user interaction:', err);
           }
         }
 
-        setLocalStream(mediaStream);
-        setIsVideoEnabled(true);
         setIsVideoInitialized(true);
+        setIsInitializing(false);
 
       } catch (err) {
         console.error('Video initialization failed:', err);
@@ -133,6 +168,7 @@ const VideoCall = ({ username, open, onClose, socket }) => {
               : 'Failed to start camera. Please check your device settings.',
             severity: 'error'
           });
+          setIsInitializing(false);
         }
       }
     };
@@ -146,6 +182,14 @@ const VideoCall = ({ username, open, onClose, socket }) => {
       }
     };
   }, [open]);
+
+  useEffect(() => {
+    if (localStream && localVideoRef.current) {
+      console.log('Updating video element with new stream');
+      localVideoRef.current.srcObject = localStream;
+      debugVideoElement();
+    }
+  }, [localStream]);
 
   useEffect(() => {
     if (!open || !socket || !isVideoInitialized) return;
@@ -230,61 +274,15 @@ const VideoCall = ({ username, open, onClose, socket }) => {
     };
   }, [open, socket, isVideoInitialized, username]);
 
-  const startLocalVideo = async () => {
-    try {
-      console.log('Starting local video...');
-      
-      // Stop any existing streams first
-      if (localStream) {
-        console.log('Stopping existing stream');
-        localStream.getTracks().forEach(track => track.stop());
-        setLocalStream(null);
-      }
-
-      console.log('Requesting media stream...');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      });
-      
-      console.log('Got stream with tracks:', stream.getTracks());
-
-      // Set stream to state first
-      setLocalStream(stream);
-      setIsVideoEnabled(true);
-
-      // Then set up video element
-      if (localVideoRef.current) {
-        console.log('Setting up video element');
-        localVideoRef.current.srcObject = stream;
-        
-        // Important: wait for metadata before playing
-        localVideoRef.current.onloadedmetadata = () => {
-          console.log('Video metadata loaded, attempting to play');
-          localVideoRef.current.play()
-            .then(() => console.log('Video playing'))
-            .catch(err => {
-              console.error('Play failed:', err);
-              // Add a visible play button
-              setNotification({
-                open: true,
-                message: 'Click the video area to start camera',
-                severity: 'info'
-              });
-            });
-        };
-      } else {
-        console.error('No video element reference');
-      }
-
-    } catch (err) {
-      console.error('Failed to start video:', err);
-      setNotification({
-        open: true,
-        message: err.name === 'NotAllowedError' 
-          ? 'Camera access was denied. Please allow camera access and try again.'
-          : 'Failed to start camera. Please check your device settings.',
-        severity: 'error'
+  const debugVideoElement = () => {
+    if (localVideoRef.current) {
+      console.log('Video element state:', {
+        readyState: localVideoRef.current.readyState,
+        paused: localVideoRef.current.paused,
+        currentSrc: localVideoRef.current.currentSrc,
+        videoWidth: localVideoRef.current.videoWidth,
+        videoHeight: localVideoRef.current.videoHeight,
+        srcObject: localVideoRef.current.srcObject ? 'present' : 'null'
       });
     }
   };
@@ -435,21 +433,16 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                     aspectRatio: '16/9',
                     backgroundColor: '#1a1a1a',
                     borderRadius: '8px',
-                    overflow: 'hidden',
-                    cursor: 'pointer'
+                    overflow: 'hidden'
                   }}
                   onClick={async () => {
                     if (localVideoRef.current && localVideoRef.current.paused) {
                       try {
                         await localVideoRef.current.play();
                         console.log('Video started on click');
+                        debugVideoElement();
                       } catch (err) {
                         console.error('Play failed on click:', err);
-                        setNotification({
-                          open: true,
-                          message: 'Failed to start video. Please try again.',
-                          severity: 'error'
-                        });
                       }
                     }
                   }}
@@ -464,7 +457,8 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                       height: '100%',
                       objectFit: 'cover',
                       transform: 'scaleX(-1)',
-                      display: isVideoEnabled ? 'block' : 'none'
+                      display: isVideoEnabled ? 'block' : 'none',
+                      backgroundColor: '#1a1a1a'
                     }}
                   />
                   {!isVideoEnabled && (
