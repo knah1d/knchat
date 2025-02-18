@@ -32,55 +32,23 @@ const VideoCall = ({ username, open, onClose }) => {
       const newPeer = new Peer(uniquePeerId, {
         config: {
           iceServers: [
-            { 
-              urls: [
-                'stun:stun.l.google.com:19302',
-                'stun:stun1.l.google.com:19302',
-                'stun:stun2.l.google.com:19302',
-                'stun:stun3.l.google.com:19302',
-                'stun:stun4.l.google.com:19302'
-              ]
-            },
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
             {
-              urls: [
-                'turn:turn.anyfirewall.com:443?transport=tcp'
-              ],
-              username: 'webrtc',
-              credential: 'webrtc'
-            },
-            {
-              urls: [
-                'turn:openrelay.metered.ca:443?transport=tcp'
-              ],
+              urls: 'turn:openrelay.metered.ca:443?transport=tcp',
               username: 'openrelayproject',
               credential: 'openrelayproject'
-            },
-            {
-              urls: [
-                'turn:relay.backups.cz',
-                'turn:relay.backups.cz:443?transport=tcp'
-              ],
-              username: 'webrtc',
-              credential: 'webrtc'
             }
           ],
-          iceTransportPolicy: 'relay',
-          iceCandidatePoolSize: 10,
-          bundlePolicy: 'max-bundle',
-          rtcpMuxPolicy: 'require',
-          iceServers: {
-            lifetimeDuration: '86400s'
-          }
+          iceCandidatePoolSize: 10
         },
         debug: 3,
-        host: 'peerjs.com',
+        host: '0.peerjs.com',
         secure: true,
         port: 443,
         path: '/',
-        pingInterval: 2000,
-        retryTimer: 1000,
-        connectionTimeout: 20000,
-        iceConnectionTimeout: 20000
+        pingInterval: 3000,
+        retryTimer: 1000
       });
 
       setPeer(newPeer);
@@ -94,57 +62,24 @@ const VideoCall = ({ username, open, onClose }) => {
 
       // Add ICE connection monitoring
       const monitorIceConnection = (call) => {
-        let iceRetries = 0;
-        const maxIceRetries = 3;
-        
         call.peerConnection.oniceconnectionstatechange = () => {
           const state = call.peerConnection.iceConnectionState;
           console.log('ICE Connection State:', state);
           setIceConnectionState(state);
           
-          if (state === 'failed' && iceRetries < maxIceRetries) {
-            console.log(`ICE Connection failed. Attempt ${iceRetries + 1}/${maxIceRetries} to restart ICE...`);
+          if (state === 'failed') {
+            console.log('ICE Connection failed. Attempting to restart ICE...');
             try {
-              iceRetries++;
-              // Create new ICE candidates
               call.peerConnection.restartIce();
-              // Force renegotiation
-              const sender = call.peerConnection.getSenders()[0];
-              if (sender) {
-                sender.setParameters(sender.getParameters());
-              }
             } catch (err) {
               console.error('Failed to restart ICE:', err);
             }
           }
         };
 
-        call.peerConnection.onconnectionstatechange = () => {
-          const state = call.peerConnection.connectionState;
-          console.log('Connection State:', state);
-          
-          if (state === 'failed') {
-            console.log('Connection failed. Attempting to reconnect...');
-            // Try to re-establish the connection
-            call.peerConnection.restartIce();
-          }
-        };
-
         // Monitor ICE candidate gathering
         call.peerConnection.onicegatheringstatechange = () => {
           console.log('ICE gathering state:', call.peerConnection.iceGatheringState);
-        };
-
-        // Log ICE candidates
-        call.peerConnection.onicecandidate = (event) => {
-          if (event.candidate) {
-            console.log('New ICE candidate:', {
-              type: event.candidate.type,
-              protocol: event.candidate.protocol,
-              address: event.candidate.address,
-              port: event.candidate.port
-            });
-          }
         };
       };
 
@@ -161,7 +96,17 @@ const VideoCall = ({ username, open, onClose }) => {
           call.answer(stream);
           
           monitorIceConnection(call);
-          call.on('stream', handleRemoteStream);
+          call.on('stream', (remoteVideoStream) => {
+            console.log('Received remote stream:', {
+              id: remoteVideoStream.id,
+              active: remoteVideoStream.active
+            });
+            
+            setRemoteStream(remoteVideoStream);
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = remoteVideoStream;
+            }
+          });
         } catch (err) {
           console.error('Error answering call:', err);
         }
@@ -295,27 +240,26 @@ const VideoCall = ({ username, open, onClose }) => {
       console.log('Calling peer:', remotePeerIdToCall);
       const call = peer.call(remotePeerIdToCall, localStream);
       
-      // Set up connection timeout
-      const connectionTimeout = setTimeout(() => {
-        if (call.peerConnection.iceConnectionState !== 'connected') {
-          console.log('Connection timeout. Retrying with new configuration...');
-          call.peerConnection.restartIce();
-        }
-      }, 10000);
-
       monitorIceConnection(call);
-      call.on('stream', handleRemoteStream);
+      call.on('stream', (remoteVideoStream) => {
+        console.log('Received remote stream:', {
+          id: remoteVideoStream.id,
+          active: remoteVideoStream.active
+        });
+        
+        setRemoteStream(remoteVideoStream);
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteVideoStream;
+        }
+      });
 
       call.on('error', (err) => {
         console.error('Call error:', err);
-        clearTimeout(connectionTimeout);
       });
 
       call.on('close', () => {
         console.log('Call closed');
-        clearTimeout(connectionTimeout);
         setRemoteStream(null);
-        setIsRemoteVideoReady(false);
       });
     } catch (err) {
       console.error('Failed to call user:', err);
@@ -537,12 +481,10 @@ const VideoCall = ({ username, open, onClose }) => {
               style={{ 
                 width: '100%', 
                 borderRadius: '8px', 
-                backgroundColor: '#1a1a1a',
-                objectFit: 'contain',
-                display: isRemoteVideoReady ? 'block' : 'none'
+                backgroundColor: '#1a1a1a'
               }}
             />
-            {(!remoteStream || !isRemoteVideoReady) && (
+            {!remoteStream && (
               <Box sx={{ 
                 position: 'absolute',
                 top: 0,
@@ -557,7 +499,7 @@ const VideoCall = ({ username, open, onClose }) => {
                 aspectRatio: '16/9'
               }}>
                 <Typography color="text.secondary">
-                  {!remoteStream ? 'Waiting for connection...' : 'Connecting video stream...'}
+                  Waiting for connection...
                 </Typography>
               </Box>
             )}
@@ -572,7 +514,7 @@ const VideoCall = ({ username, open, onClose }) => {
               py: 0.5,
               borderRadius: 1
             }}>
-              {isRemoteVideoReady ? 'Remote User' : 'Connecting...'}
+              {remoteStream ? 'Remote User' : 'Waiting for connection...'}
             </Box>
           </Box>
         </Box>
