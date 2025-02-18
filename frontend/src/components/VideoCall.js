@@ -168,23 +168,49 @@ const VideoCall = ({ username, open, onClose, socket }) => {
 
   const startLocalVideo = async () => {
     try {
+      console.log('Starting local video...');
       if (localStream) {
+        console.log('Stopping existing local stream tracks');
         localStream.getTracks().forEach(track => track.stop());
       }
       
+      console.log('Requesting media stream...');
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: true, 
         audio: true 
       });
       
+      console.log('Got local stream:', stream);
       setLocalStream(stream);
+
       if (localVideoRef.current) {
+        console.log('Setting local video source...');
         localVideoRef.current.srcObject = stream;
+        localVideoRef.current.muted = true; // Ensure local video is muted
+        
+        // Add event listeners for debugging
+        localVideoRef.current.onloadedmetadata = () => {
+          console.log('Local video metadata loaded');
+        };
+        
+        localVideoRef.current.onplay = () => {
+          console.log('Local video started playing');
+        };
+        
         try {
           await localVideoRef.current.play();
+          console.log('Local video playing successfully');
         } catch (err) {
           console.error('Failed to play local video:', err);
+          // Try playing again with user interaction
+          setNotification({
+            open: true,
+            message: 'Click to enable your camera',
+            severity: 'info'
+          });
         }
+      } else {
+        console.error('Local video reference not found');
       }
     } catch (err) {
       console.error('Failed to get local stream:', err);
@@ -302,7 +328,6 @@ const VideoCall = ({ username, open, onClose, socket }) => {
             if (peerRef.current) {
               peerRef.current.destroy();
             }
-            // Emit user left when dialog closes
             socket.emit('user_left_video', { username, peerId });
           }
         }}
@@ -331,30 +356,116 @@ const VideoCall = ({ username, open, onClose, socket }) => {
             </Box>
           ) : (
             !currentCall && !incomingCall ? (
-              <List>
-                {activeUsers.map((user) => (
-                  <ListItem key={user.peerId}>
-                    <ListItemText 
-                      primary={user.username}
-                      secondary="Online"
-                    />
-                    <ListItemSecondaryAction>
-                      <IconButton 
-                        edge="end" 
-                        color="primary"
-                        onClick={() => initiateCall(user)}
-                      >
-                        <CallIcon />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  </ListItem>
-                ))}
-                {activeUsers.length === 0 && (
-                  <Typography color="text.secondary" align="center">
-                    No active users available
-                  </Typography>
-                )}
-              </List>
+              <Box>
+                <Box sx={{ 
+                  width: '100%', 
+                  maxWidth: 400, 
+                  margin: '0 auto 20px auto',
+                  position: 'relative' 
+                }}>
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{ 
+                      width: '100%', 
+                      borderRadius: '8px', 
+                      backgroundColor: '#1a1a1a',
+                      display: isVideoEnabled ? 'block' : 'none'
+                    }}
+                  />
+                  {!isVideoEnabled && (
+                    <Box sx={{ 
+                      width: '100%', 
+                      height: '100%', 
+                      borderRadius: '8px', 
+                      backgroundColor: '#1a1a1a',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      aspectRatio: '16/9'
+                    }}>
+                      <Typography variant="body1" color="white">
+                        Camera Off
+                      </Typography>
+                    </Box>
+                  )}
+                  <Box sx={{ 
+                    position: 'absolute', 
+                    bottom: 8, 
+                    left: 0, 
+                    right: 0,
+                    px: 2,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    gap: 1
+                  }}>
+                    <IconButton 
+                      size="small"
+                      onClick={() => {
+                        if (localStream) {
+                          const videoTrack = localStream.getVideoTracks()[0];
+                          if (videoTrack) {
+                            videoTrack.enabled = !videoTrack.enabled;
+                            setIsVideoEnabled(videoTrack.enabled);
+                          }
+                        }
+                      }}
+                      sx={{ 
+                        bgcolor: 'rgba(0,0,0,0.6)',
+                        color: 'white',
+                        '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
+                      }}
+                    >
+                      {isVideoEnabled ? <VideocamIcon /> : <VideocamOffIcon />}
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        if (localStream) {
+                          const audioTrack = localStream.getAudioTracks()[0];
+                          if (audioTrack) {
+                            audioTrack.enabled = !audioTrack.enabled;
+                            setIsAudioEnabled(audioTrack.enabled);
+                          }
+                        }
+                      }}
+                      sx={{ 
+                        bgcolor: 'rgba(0,0,0,0.6)',
+                        color: 'white',
+                        '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' }
+                      }}
+                    >
+                      {isAudioEnabled ? <MicIcon /> : <MicOffIcon />}
+                    </IconButton>
+                  </Box>
+                </Box>
+                <List>
+                  {activeUsers.map((user) => (
+                    <ListItem key={user.peerId}>
+                      <ListItemText 
+                        primary={user.username}
+                        secondary="Online"
+                      />
+                      <ListItemSecondaryAction>
+                        <IconButton 
+                          edge="end" 
+                          color="primary"
+                          onClick={() => initiateCall(user)}
+                        >
+                          <CallIcon />
+                        </IconButton>
+                      </ListItemSecondaryAction>
+                    </ListItem>
+                  ))}
+                  {activeUsers.length === 0 && (
+                    <Typography color="text.secondary" align="center">
+                      No active users available
+                    </Typography>
+                  )}
+                </List>
+              </Box>
             ) : (
               <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
                 <Box sx={{ width: '50%', position: 'relative' }}>
