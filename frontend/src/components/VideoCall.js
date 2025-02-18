@@ -20,6 +20,7 @@ const VideoCall = ({ username, open, onClose }) => {
   const localVideoRef = useRef();
   const remoteVideoRef = useRef();
   const [connectionState, setConnectionState] = useState('disconnected');
+  const [iceConnectionState, setIceConnectionState] = useState('new');
 
   useEffect(() => {
     if (open) {
@@ -30,24 +31,37 @@ const VideoCall = ({ username, open, onClose }) => {
       const newPeer = new Peer(uniquePeerId, {
         config: {
           iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { 
-              urls: 'turn:openrelay.metered.ca:80',
+            { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+            {
+              urls: [
+                'turn:eu-0.turn.peerjs.com:3478',
+                'turn:us-0.turn.peerjs.com:3478'
+              ],
+              username: 'peerjs',
+              credential: 'peerjsp'
+            },
+            {
+              urls: [
+                'turn:openrelay.metered.ca:80',
+                'turn:openrelay.metered.ca:443',
+                'turn:openrelay.metered.ca:443?transport=tcp'
+              ],
               username: 'openrelayproject',
               credential: 'openrelayproject'
             },
             {
-              urls: 'turn:openrelay.metered.ca:443',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
-            },
-            {
-              urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
+              urls: [
+                'turn:global.turn.twilio.com:3478?transport=udp',
+                'turn:global.turn.twilio.com:3478?transport=tcp',
+                'turn:global.turn.twilio.com:443?transport=tcp'
+              ],
+              username: 'f4b4035eaa76f4a55de5f4351567653ee4ff6fa97b50b6b334fcc1be9c27212d',
+              credential: 'w1uxM/0f1YgG+nXC0oBPKGJjG5xdHbhqGHX6C52A+nQ='
             }
-          ]
+          ],
+          iceTransportPolicy: 'all',
+          iceCandidatePoolSize: 10,
+          bundlePolicy: 'max-bundle'
         },
         debug: 3,
         host: '0.peerjs.com',
@@ -56,9 +70,10 @@ const VideoCall = ({ username, open, onClose }) => {
         path: '/',
         pingInterval: 5000,
         retryTimer: 3000,
+        connectionTimeout: 15000,
+        iceConnectionTimeout: 15000,
         config: {
-          iceTransportPolicy: 'relay',
-          reconnectTimer: 3000,
+          reconnectTimer: 3000
         }
       });
 
@@ -71,14 +86,42 @@ const VideoCall = ({ username, open, onClose }) => {
         startLocalVideo();
       });
 
+      // Add ICE connection monitoring
+      const monitorIceConnection = (call) => {
+        call.peerConnection.oniceconnectionstatechange = () => {
+          const state = call.peerConnection.iceConnectionState;
+          console.log('ICE Connection State:', state);
+          setIceConnectionState(state);
+          
+          if (state === 'failed') {
+            console.log('ICE Connection failed. Attempting to restart ICE...');
+            try {
+              call.peerConnection.restartIce();
+            } catch (err) {
+              console.error('Failed to restart ICE:', err);
+            }
+          }
+        };
+
+        call.peerConnection.onconnectionstatechange = () => {
+          console.log('Connection State:', call.peerConnection.connectionState);
+        };
+      };
+
       newPeer.on('call', async (call) => {
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: true, 
+            audio: true 
+          });
           setLocalStream(stream);
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = stream;
           }
           call.answer(stream);
+          
+          // Monitor ICE connection for incoming calls
+          monitorIceConnection(call);
           
           call.on('stream', (remoteVideoStream) => {
             setRemoteStream(remoteVideoStream);
@@ -177,6 +220,9 @@ const VideoCall = ({ username, open, onClose }) => {
       console.log('Calling peer:', remotePeerIdToCall);
       const call = peer.call(remotePeerIdToCall, localStream);
       
+      // Monitor ICE connection for outgoing calls
+      monitorIceConnection(call);
+      
       call.on('stream', (remoteVideoStream) => {
         console.log('Received remote stream');
         setRemoteStream(remoteVideoStream);
@@ -260,6 +306,15 @@ const VideoCall = ({ username, open, onClose }) => {
                   connectionState === 'checking' ? 'Checking connection...' :
                   connectionState === 'switching_server' ? 'Switching servers...' : 
                   'Disconnected'})
+              </Typography>
+            )}
+            {iceConnectionState !== 'connected' && iceConnectionState !== 'new' && (
+              <Typography 
+                component="span" 
+                color={iceConnectionState === 'checking' ? 'primary' : 'error'}
+                sx={{ ml: 1 }}
+              >
+                (Connection: {iceConnectionState})
               </Typography>
             )}
           </Typography>
