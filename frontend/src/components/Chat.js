@@ -684,6 +684,7 @@ const Chat = () => {
             username={username}
             open={isVideoCallOpen}
             onClose={() => setIsVideoCallOpen(false)}
+            socket={socketRef.current}
           />
         </>
       )}

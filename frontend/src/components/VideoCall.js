@@ -41,75 +41,156 @@ const VideoCall = ({ username, open, onClose, socket }) => {
   const remoteVideoRef = useRef();
 
   useEffect(() => {
-    if (open) {
-      const randomId = Math.random().toString(36).substring(7);
-      const uniquePeerId = `${username}_${randomId}`;
-
-      const newPeer = new Peer(uniquePeerId, {
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            {
-              urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
-            }
-          ],
-          iceCandidatePoolSize: 10
-        },
-        debug: 3,
-        host: '0.peerjs.com',
-        secure: true,
-        port: 443,
-        path: '/',
-        pingInterval: 3000,
-        retryTimer: 1000
-      });
-
-      setPeer(newPeer);
-
-      newPeer.on('open', (id) => {
-        console.log('Successfully connected to PeerJS server. My peer ID is:', id);
-        setPeerId(id);
-        socket.emit('user_joined_video', { username, peerId: id });
-        startLocalVideo();
-      });
-
-      newPeer.on('call', async (call) => {
-        const callerUsername = call.metadata?.username;
-        setIncomingCall({ call, username: callerUsername });
-      });
-
-      socket.on('active_video_users', (users) => {
-        setActiveUsers(users.filter(user => user.username !== username));
-      });
-
-      return () => {
-        if (localStream) {
-          localStream.getTracks().forEach(track => track.stop());
-        }
-        if (remoteStream) {
-          remoteStream.getTracks().forEach(track => track.stop());
-        }
-        socket.emit('user_left_video', { username, peerId });
-        newPeer.destroy();
-      };
+    if (!open || !socket) {
+      // Clean up if dialog is closed or socket is not available
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      if (remoteStream) {
+        remoteStream.getTracks().forEach(track => track.stop());
+      }
+      if (peer) {
+        peer.destroy();
+      }
+      setPeer(null);
+      setLocalStream(null);
+      setRemoteStream(null);
+      setActiveUsers([]);
+      return;
     }
+
+    const initializePeer = async () => {
+      try {
+        const randomId = Math.random().toString(36).substring(7);
+        const uniquePeerId = `${username}_${randomId}`;
+
+        const newPeer = new Peer(uniquePeerId, {
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+              {
+                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+              }
+            ],
+            iceCandidatePoolSize: 10
+          },
+          debug: 3,
+          host: '0.peerjs.com',
+          secure: true,
+          port: 443,
+          path: '/',
+          pingInterval: 3000,
+          retryTimer: 1000
+        });
+
+        setPeer(newPeer);
+
+        newPeer.on('open', (id) => {
+          console.log('Successfully connected to PeerJS server. My peer ID is:', id);
+          setPeerId(id);
+          socket.emit('user_joined_video', { username, peerId: id });
+          startLocalVideo();
+        });
+
+        newPeer.on('error', (err) => {
+          console.error('PeerJS error:', err);
+          setNotification({
+            open: true,
+            message: 'Connection error occurred. Please try again.',
+            severity: 'error'
+          });
+        });
+
+        newPeer.on('call', async (call) => {
+          const callerUsername = call.metadata?.username;
+          setIncomingCall({ call, username: callerUsername });
+        });
+
+        // Clean up on unmount
+        return () => {
+          newPeer.destroy();
+        };
+      } catch (err) {
+        console.error('Failed to initialize peer:', err);
+        setNotification({
+          open: true,
+          message: 'Failed to initialize video call',
+          severity: 'error'
+        });
+      }
+    };
+
+    initializePeer();
+
+    // Set up socket listeners
+    socket.on('active_video_users', (users) => {
+      setActiveUsers(users.filter(user => user.username !== username));
+    });
+
+    socket.on('incoming_video_call', ({ from }) => {
+      setNotification({
+        open: true,
+        message: `Incoming call from ${from}`,
+        severity: 'info'
+      });
+    });
+
+    socket.on('video_call_rejected', ({ from }) => {
+      setNotification({
+        open: true,
+        message: `${from} rejected the call`,
+        severity: 'info'
+      });
+    });
+
+    // Clean up function
+    return () => {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      if (remoteStream) {
+        remoteStream.getTracks().forEach(track => track.stop());
+      }
+      if (socket) {
+        socket.emit('user_left_video', { username, peerId });
+        socket.off('active_video_users');
+        socket.off('incoming_video_call');
+        socket.off('video_call_rejected');
+      }
+      if (peer) {
+        peer.destroy();
+      }
+    };
   }, [open, username, socket]);
 
   const startLocalVideo = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: true 
+      });
+      
       setLocalStream(stream);
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
+        try {
+          await localVideoRef.current.play();
+        } catch (err) {
+          console.error('Failed to play local video:', err);
+        }
       }
     } catch (err) {
       console.error('Failed to get local stream:', err);
       setNotification({
         open: true,
-        message: 'Failed to access camera/microphone',
+        message: 'Failed to access camera/microphone. Please check permissions.',
         severity: 'error'
       });
     }
@@ -207,6 +288,20 @@ const VideoCall = ({ username, open, onClose, socket }) => {
         onClose={onClose}
         maxWidth="md"
         fullWidth
+        TransitionProps={{
+          onExited: () => {
+            // Clean up when dialog is fully closed
+            if (localStream) {
+              localStream.getTracks().forEach(track => track.stop());
+            }
+            if (remoteStream) {
+              remoteStream.getTracks().forEach(track => track.stop());
+            }
+            setLocalStream(null);
+            setRemoteStream(null);
+            setActiveUsers([]);
+          }
+        }}
       >
         <DialogTitle>
           Video Call
