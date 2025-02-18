@@ -81,6 +81,12 @@ const VideoCall = ({ username, open, onClose, socket }) => {
 
       try {
         setIsInitializing(true);
+        
+        // Start video first
+        await startLocalVideo();
+        
+        if (!mounted) return;
+
         const randomId = Math.random().toString(36).substring(7);
         const uniquePeerId = `${username}_${randomId}`;
 
@@ -112,9 +118,7 @@ const VideoCall = ({ username, open, onClose, socket }) => {
           console.log('PeerJS: Connected with ID:', id);
           setPeerId(id);
           setPeer(newPeer);
-          // Re-emit user joined when peer is ready
           socket.emit('user_joined_video', { username, peerId: id });
-          startLocalVideo();
           setIsInitializing(false);
         });
 
@@ -136,7 +140,7 @@ const VideoCall = ({ username, open, onClose, socket }) => {
         });
 
       } catch (err) {
-        console.error('Failed to initialize peer:', err);
+        console.error('Failed to initialize:', err);
         if (!mounted) return;
         setNotification({
           open: true,
@@ -157,106 +161,68 @@ const VideoCall = ({ username, open, onClose, socket }) => {
       if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
       }
-      if (remoteStream) {
-        remoteStream.getTracks().forEach(track => track.stop());
-      }
       setLocalStream(null);
-      setRemoteStream(null);
-      setActiveUsers([]);
     };
   }, [open, username, socket]);
-
-  // Add immediate video setup when component mounts
-  useEffect(() => {
-    if (open) {
-      startLocalVideo();
-    }
-  }, [open]);
 
   const startLocalVideo = async () => {
     try {
       console.log('Starting local video...');
       
-      // Stop any existing streams
+      // Stop any existing streams first
       if (localStream) {
+        console.log('Stopping existing stream');
         localStream.getTracks().forEach(track => track.stop());
         setLocalStream(null);
       }
 
-      // Reset video element
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = null;
-      }
-      
       console.log('Requesting media stream...');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: 640,
-          height: 480,
-          frameRate: 30
-        },
+        video: true,
         audio: true
       });
       
-      console.log('Got local stream:', stream, 'Tracks:', stream.getTracks());
-      
-      // Verify we have a video track
-      const videoTrack = stream.getVideoTracks()[0];
-      if (!videoTrack) {
-        throw new Error('No video track available');
-      }
-      
-      console.log('Video track:', videoTrack.label, 'enabled:', videoTrack.enabled);
-      videoTrack.enabled = true;
+      console.log('Got stream with tracks:', stream.getTracks());
 
-      // Set up the video element directly
-      if (localVideoRef.current) {
-        console.log('Setting up video element');
-        localVideoRef.current.srcObject = stream;
-        localVideoRef.current.muted = true;
-        
-        // Force play attempt
-        const playPromise = localVideoRef.current.play();
-        if (playPromise) {
-          playPromise.catch(error => {
-            console.log('Play prevented, waiting for user interaction:', error);
-            // Add click handler to start video
-            const startVideo = async () => {
-              try {
-                await localVideoRef.current.play();
-                document.removeEventListener('click', startVideo);
-              } catch (err) {
-                console.error('Play failed after click:', err);
-              }
-            };
-            document.addEventListener('click', startVideo);
-          });
-        }
-      }
-
-      // Update state after successful setup
+      // Set stream to state first
       setLocalStream(stream);
       setIsVideoEnabled(true);
 
+      // Then set up video element
+      if (localVideoRef.current) {
+        console.log('Setting up video element');
+        localVideoRef.current.srcObject = stream;
+        
+        // Important: wait for metadata before playing
+        localVideoRef.current.onloadedmetadata = () => {
+          console.log('Video metadata loaded, attempting to play');
+          localVideoRef.current.play()
+            .then(() => console.log('Video playing'))
+            .catch(err => {
+              console.error('Play failed:', err);
+              // Add a visible play button
+              setNotification({
+                open: true,
+                message: 'Click the video area to start camera',
+                severity: 'info'
+              });
+            });
+        };
+      } else {
+        console.error('No video element reference');
+      }
+
     } catch (err) {
-      console.error('Camera setup failed:', err);
+      console.error('Failed to start video:', err);
       setNotification({
         open: true,
         message: err.name === 'NotAllowedError' 
-          ? 'Please allow camera access to use video calls'
+          ? 'Camera access was denied. Please allow camera access and try again.'
           : 'Failed to start camera. Please check your device settings.',
         severity: 'error'
       });
     }
   };
-
-  // Add a useEffect to handle video element initialization
-  useEffect(() => {
-    if (localStream && localVideoRef.current) {
-      console.log('Updating video element with stream');
-      localVideoRef.current.srcObject = localStream;
-    }
-  }, [localStream]);
 
   const initiateCall = async (userToCall) => {
     if (!peer || !localStream) return;
@@ -402,12 +368,14 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                     aspectRatio: '16/9',
                     backgroundColor: '#1a1a1a',
                     borderRadius: '8px',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    cursor: 'pointer'
                   }}
                   onClick={async () => {
-                    if (localVideoRef.current && localVideoRef.current.paused) {
+                    if (localVideoRef.current) {
                       try {
                         await localVideoRef.current.play();
+                        console.log('Video started playing on click');
                       } catch (err) {
                         console.error('Play failed on click:', err);
                       }
