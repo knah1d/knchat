@@ -31,21 +31,32 @@ const VideoCall = ({ username, open, onClose }) => {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' },
+            { 
+              urls: 'turn:openrelay.metered.ca:80',
+              username: 'openrelayproject',
+              credential: 'openrelayproject'
+            },
             {
-              urls: 'turn:numb.viagenie.ca',
-              credential: 'muazkh',
-              username: 'webrtc@live.com'
+              urls: 'turn:openrelay.metered.ca:443',
+              username: 'openrelayproject',
+              credential: 'openrelayproject'
+            },
+            {
+              urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+              username: 'openrelayproject',
+              credential: 'openrelayproject'
             }
           ]
         },
         debug: 3,
-        host: '0.peerjs.com',
-        port: 443,
+        host: 'peerjs-server.herokuapp.com',
         secure: true,
-        path: '/'
+        port: 443,
+        path: '/',
+        config: {
+          iceTransportPolicy: 'relay',
+          reconnectTimer: 3000,
+        }
       });
 
       setPeer(newPeer);
@@ -76,13 +87,26 @@ const VideoCall = ({ username, open, onClose }) => {
         }
       });
 
-      newPeer.on('error', (err) => {
-        console.error('PeerJS error:', err);
+      newPeer.on('disconnected', () => {
+        console.log('Connection to PeerJS server lost. Attempting to reconnect...');
+        setTimeout(() => {
+          if (newPeer) {
+            console.log('Attempting to reconnect to PeerJS server...');
+            newPeer.reconnect();
+          }
+        }, 3000);
       });
 
-      newPeer.on('disconnected', () => {
-        console.log('Peer disconnected. Attempting to reconnect...');
-        newPeer.reconnect();
+      newPeer.on('error', (err) => {
+        console.error('PeerJS error:', err);
+        if (err.type === 'peer-unavailable') {
+          console.log('Peer is not available. They may be offline or behind a restrictive firewall.');
+        } else if (err.type === 'network') {
+          console.log('Network error occurred. Check your internet connection.');
+        } else if (err.type === 'disconnected') {
+          console.log('Connection to signaling server lost. Attempting to reconnect...');
+          setTimeout(() => newPeer.reconnect(), 3000);
+        }
       });
 
       return () => {
