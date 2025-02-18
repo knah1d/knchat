@@ -39,6 +39,7 @@ const VideoCall = ({ username, open, onClose, socket }) => {
   const [currentCall, setCurrentCall] = useState(null);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isVideoInitialized, setIsVideoInitialized] = useState(false);
   const localVideoRef = useRef();
   const remoteVideoRef = useRef();
   const peerRef = useRef();
@@ -73,20 +74,87 @@ const VideoCall = ({ username, open, onClose, socket }) => {
   useEffect(() => {
     let mounted = true;
 
-    const initializePeer = async () => {
-      if (!open || !socket) {
-        setIsInitializing(false);
-        return;
-      }
+    const initVideo = async () => {
+      if (!open) return;
 
       try {
-        setIsInitializing(true);
+        console.log('Initializing video...');
         
-        // Start video first
-        await startLocalVideo();
-        
-        if (!mounted) return;
+        // Clear any existing streams
+        if (localStream) {
+          localStream.getTracks().forEach(track => track.stop());
+          setLocalStream(null);
+        }
 
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = null;
+        }
+
+        // Request camera access
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          },
+          audio: true
+        });
+
+        if (!mounted) {
+          mediaStream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        console.log('Got media stream:', mediaStream.getTracks());
+
+        // Set up video element
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = mediaStream;
+          
+          // Force a play attempt
+          try {
+            await localVideoRef.current.play();
+            console.log('Local video playing');
+          } catch (playError) {
+            console.warn('Auto-play failed:', playError);
+          }
+        }
+
+        setLocalStream(mediaStream);
+        setIsVideoEnabled(true);
+        setIsVideoInitialized(true);
+
+      } catch (err) {
+        console.error('Video initialization failed:', err);
+        if (mounted) {
+          setNotification({
+            open: true,
+            message: err.name === 'NotAllowedError' 
+              ? 'Please allow camera access to use video calls'
+              : 'Failed to start camera. Please check your device settings.',
+            severity: 'error'
+          });
+        }
+      }
+    };
+
+    initVideo();
+
+    return () => {
+      mounted = false;
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !socket || !isVideoInitialized) return;
+
+    let mounted = true;
+    console.log('Initializing peer connection...');
+
+    const initializePeer = async () => {
+      try {
         const randomId = Math.random().toString(36).substring(7);
         const uniquePeerId = `${username}_${randomId}`;
 
@@ -140,14 +208,15 @@ const VideoCall = ({ username, open, onClose, socket }) => {
         });
 
       } catch (err) {
-        console.error('Failed to initialize:', err);
-        if (!mounted) return;
-        setNotification({
-          open: true,
-          message: 'Failed to initialize video call',
-          severity: 'error'
-        });
-        setIsInitializing(false);
+        console.error('Peer initialization failed:', err);
+        if (mounted) {
+          setNotification({
+            open: true,
+            message: 'Failed to initialize video call connection',
+            severity: 'error'
+          });
+          setIsInitializing(false);
+        }
       }
     };
 
@@ -158,12 +227,8 @@ const VideoCall = ({ username, open, onClose, socket }) => {
       if (peerRef.current) {
         peerRef.current.destroy();
       }
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
-      setLocalStream(null);
     };
-  }, [open, username, socket]);
+  }, [open, socket, isVideoInitialized, username]);
 
   const startLocalVideo = async () => {
     try {
@@ -354,7 +419,9 @@ const VideoCall = ({ username, open, onClose, socket }) => {
               minHeight: 400
             }}>
               <CircularProgress sx={{ mb: 2 }} />
-              <Typography>Initializing video call...</Typography>
+              <Typography>
+                {!isVideoInitialized ? 'Setting up camera...' : 'Initializing connection...'}
+              </Typography>
             </Box>
           ) : (
             !currentCall && !incomingCall ? (
@@ -372,12 +439,17 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                     cursor: 'pointer'
                   }}
                   onClick={async () => {
-                    if (localVideoRef.current) {
+                    if (localVideoRef.current && localVideoRef.current.paused) {
                       try {
                         await localVideoRef.current.play();
-                        console.log('Video started playing on click');
+                        console.log('Video started on click');
                       } catch (err) {
                         console.error('Play failed on click:', err);
+                        setNotification({
+                          open: true,
+                          message: 'Failed to start video. Please try again.',
+                          severity: 'error'
+                        });
                       }
                     }
                   }}
@@ -391,7 +463,7 @@ const VideoCall = ({ username, open, onClose, socket }) => {
                       width: '100%',
                       height: '100%',
                       objectFit: 'cover',
-                      transform: 'scaleX(-1)', // Mirror the video
+                      transform: 'scaleX(-1)',
                       display: isVideoEnabled ? 'block' : 'none'
                     }}
                   />
