@@ -92,19 +92,34 @@ const VideoCall = ({ username, open, onClose }) => {
           setLocalStream(stream);
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = stream;
+            await localVideoRef.current.play();
           }
           call.answer(stream);
           
           monitorIceConnection(call);
-          call.on('stream', (remoteVideoStream) => {
+          call.on('stream', async (remoteVideoStream) => {
             console.log('Received remote stream:', {
               id: remoteVideoStream.id,
-              active: remoteVideoStream.active
+              active: remoteVideoStream.active,
+              tracks: remoteVideoStream.getTracks().map(track => ({
+                kind: track.kind,
+                enabled: track.enabled,
+                readyState: track.readyState
+              }))
             });
             
             setRemoteStream(remoteVideoStream);
             if (remoteVideoRef.current) {
+              console.log('Attaching remote stream to video element');
               remoteVideoRef.current.srcObject = remoteVideoStream;
+              try {
+                await remoteVideoRef.current.play();
+                console.log('Remote video started playing');
+              } catch (err) {
+                console.error('Failed to play remote video:', err);
+              }
+            } else {
+              console.error('Remote video ref not available');
             }
           });
         } catch (err) {
@@ -241,15 +256,29 @@ const VideoCall = ({ username, open, onClose }) => {
       const call = peer.call(remotePeerIdToCall, localStream);
       
       monitorIceConnection(call);
-      call.on('stream', (remoteVideoStream) => {
+      call.on('stream', async (remoteVideoStream) => {
         console.log('Received remote stream:', {
           id: remoteVideoStream.id,
-          active: remoteVideoStream.active
+          active: remoteVideoStream.active,
+          tracks: remoteVideoStream.getTracks().map(track => ({
+            kind: track.kind,
+            enabled: track.enabled,
+            readyState: track.readyState
+          }))
         });
         
         setRemoteStream(remoteVideoStream);
         if (remoteVideoRef.current) {
+          console.log('Attaching remote stream to video element');
           remoteVideoRef.current.srcObject = remoteVideoStream;
+          try {
+            await remoteVideoRef.current.play();
+            console.log('Remote video started playing');
+          } catch (err) {
+            console.error('Failed to play remote video:', err);
+          }
+        } else {
+          console.error('Remote video ref not available');
         }
       });
 
@@ -259,6 +288,9 @@ const VideoCall = ({ username, open, onClose }) => {
 
       call.on('close', () => {
         console.log('Call closed');
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = null;
+        }
         setRemoteStream(null);
       });
     } catch (err) {
@@ -478,11 +510,20 @@ const VideoCall = ({ username, open, onClose }) => {
               ref={remoteVideoRef}
               autoPlay
               playsInline
+              muted={false}
+              controls
               style={{ 
                 width: '100%', 
                 borderRadius: '8px', 
-                backgroundColor: '#1a1a1a'
+                backgroundColor: '#1a1a1a',
+                display: remoteStream ? 'block' : 'none'
               }}
+              onLoadedMetadata={(e) => {
+                console.log('Remote video metadata loaded');
+                e.target.play().catch(err => console.error('Play failed:', err));
+              }}
+              onPlay={() => console.log('Remote video playing')}
+              onError={(e) => console.error('Video error:', e)}
             />
             {!remoteStream && (
               <Box sx={{ 
