@@ -44,6 +44,33 @@ const VideoCall = ({ username, open, onClose, socket }) => {
   const peerRef = useRef();
 
   useEffect(() => {
+    if (!socket || !open) return;
+
+    console.log('Setting up video call socket listeners for:', username);
+
+    // Immediately emit user joined when component opens
+    socket.emit('user_joined_video', { username, peerId });
+
+    // Set up socket event listeners
+    const handleActiveUsers = (users) => {
+      console.log('Received active users:', users);
+      // Filter out current user and ensure we're getting an array
+      const otherUsers = Array.isArray(users) ? users.filter(user => user.username !== username) : [];
+      console.log('Filtered active users:', otherUsers);
+      setActiveUsers(otherUsers);
+    };
+
+    socket.on('active_video_users', handleActiveUsers);
+
+    // Clean up function
+    return () => {
+      console.log('Cleaning up video call socket listeners');
+      socket.off('active_video_users', handleActiveUsers);
+      socket.emit('user_left_video', { username, peerId });
+    };
+  }, [socket, open, username, peerId]);
+
+  useEffect(() => {
     let mounted = true;
 
     const initializePeer = async () => {
@@ -85,6 +112,7 @@ const VideoCall = ({ username, open, onClose, socket }) => {
           console.log('PeerJS: Connected with ID:', id);
           setPeerId(id);
           setPeer(newPeer);
+          // Re-emit user joined when peer is ready
           socket.emit('user_joined_video', { username, peerId: id });
           startLocalVideo();
           setIsInitializing(false);
@@ -121,27 +149,6 @@ const VideoCall = ({ username, open, onClose, socket }) => {
 
     initializePeer();
 
-    // Set up socket listeners
-    socket.on('active_video_users', (users) => {
-      setActiveUsers(users.filter(user => user.username !== username));
-    });
-
-    socket.on('incoming_video_call', ({ from }) => {
-      setNotification({
-        open: true,
-        message: `Incoming call from ${from}`,
-        severity: 'info'
-      });
-    });
-
-    socket.on('video_call_rejected', ({ from }) => {
-      setNotification({
-        open: true,
-        message: `${from} rejected the call`,
-        severity: 'info'
-      });
-    });
-
     return () => {
       mounted = false;
       if (peerRef.current) {
@@ -152,12 +159,6 @@ const VideoCall = ({ username, open, onClose, socket }) => {
       }
       if (remoteStream) {
         remoteStream.getTracks().forEach(track => track.stop());
-      }
-      if (socket) {
-        socket.emit('user_left_video', { username, peerId });
-        socket.off('active_video_users');
-        socket.off('incoming_video_call');
-        socket.off('video_call_rejected');
       }
       setLocalStream(null);
       setRemoteStream(null);
@@ -301,6 +302,8 @@ const VideoCall = ({ username, open, onClose, socket }) => {
             if (peerRef.current) {
               peerRef.current.destroy();
             }
+            // Emit user left when dialog closes
+            socket.emit('user_left_video', { username, peerId });
           }
         }}
       >

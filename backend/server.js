@@ -266,13 +266,19 @@ io.on('connection', async (socket) => {
 
   // Handle video call users
   socket.on('user_joined_video', ({ username, peerId }) => {
+    console.log('User joined video:', username, peerId);
     activeVideoUsers.set(username, { username, peerId, socketId: socket.id });
+    // Broadcast updated active users list to all clients
     io.emit('active_video_users', Array.from(activeVideoUsers.values()));
+    console.log('Active video users:', Array.from(activeVideoUsers.values()));
   });
 
   socket.on('user_left_video', ({ username }) => {
+    console.log('User left video:', username);
     activeVideoUsers.delete(username);
+    // Broadcast updated active users list to all clients
     io.emit('active_video_users', Array.from(activeVideoUsers.values()));
+    console.log('Active video users after leave:', Array.from(activeVideoUsers.values()));
   });
 
   socket.on('video_call_initiated', ({ from, to }) => {
@@ -294,8 +300,13 @@ io.on('connection', async (socket) => {
     console.log('Client disconnected:', username);
     typingUsers.delete(username);
     io.emit('typing-update', Array.from(typingUsers));
-    activeVideoUsers.delete(username);
-    io.emit('active_video_users', Array.from(activeVideoUsers.values()));
+    
+    // Clean up video users on disconnect
+    if (activeVideoUsers.has(username)) {
+      console.log('Removing disconnected video user:', username);
+      activeVideoUsers.delete(username);
+      io.emit('active_video_users', Array.from(activeVideoUsers.values()));
+    }
   });
 
   // Error handling
