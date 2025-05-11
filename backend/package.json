@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "description": "Backend for MERN Chat Application",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "debug": "NODE_ENV=development nodemon --inspect server.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare-env": "cp .env.example .env"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

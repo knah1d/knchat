@@ -1,7 +1,11 @@
 import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material';
 import CssBaseline from '@mui/material/CssBaseline';
 import Chat from './components/Chat';
+import Login from './components/Login';
+import Register from './components/Register';
+import { useAuth } from './context/AuthContext';
 
 const theme = createTheme({
   palette: {
@@ -23,11 +27,25 @@ const theme = createTheme({
   },
 });
 
+// Protected route component
+const ProtectedRoute = ({ children }) => {
+  const { user } = useAuth();
+  return user ? children : <Navigate to="/login" />;
+};
+
 function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Chat />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/" element={
+          <ProtectedRoute>
+            <Chat />
+          </ProtectedRoute>
+        } />
+      </Routes>
     </ThemeProvider>
   );
 }

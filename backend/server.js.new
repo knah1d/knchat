@@ -1,21 +1,18 @@
-import express from 'express';
-import cors from 'cors';
-import http from 'http';
-import cookieParser from 'cookie-parser';
-import dotenv from 'dotenv';
-import authRoutes from './routes/auth.js';
-import messageRoutes from './routes/messages.js';
-
-// Initialize dotenv
-dotenv.config();
+const express = require('express');
+const cors = require('cors');
+const http = require('http');
+const cookieParser = require('cookie-parser');
+const authRoutes = require('./routes/auth');
+const messageRoutes = require('./routes/messages');
+require('dotenv').config();
 
 // Import configuration and services
-import { connectMongoDB } from './config/db.js';
-import { getOrigins, corsOptions } from './config/app.js';
-import { setupSessionStore, createSessionMiddleware } from './services/sessionService.js';
-import { setupSocketIO } from './services/socketService.js';
-import { logEnvironment, createResponse } from './utils/logger.js';
-import { securityHeaders, requestLogger } from './middleware/auth.js';
+const { connectMongoDB } = require('./config/db');
+const { getOrigins, corsOptions } = require('./config/app');
+const { setupSessionStore, createSessionMiddleware } = require('./services/sessionService');
+const { setupSocketIO } = require('./services/socketService');
+const { logEnvironment, createResponse } = require('./utils/logger');
+const { securityHeaders, requestLogger } = require('./middleware/auth');
 
 // Initialize express app and server
 const app = express();
@@ -97,4 +94,4 @@ process.on('SIGTERM', () => {
   });
 });
 
-export { app, server };
+module.exports = { app, server };

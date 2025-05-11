@@ -1,19 +1,36 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { authService } from '../services/api';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')));
+  const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
 
+  // Check authentication status on app load
   useEffect(() => {
-    if (token) {
-      localStorage.setItem('token', token);
-    } else {
-      localStorage.removeItem('token');
-    }
-  }, [token]);
+    const checkAuthStatus = async () => {
+      try {
+        const response = await authService.checkAuth();
+        if (response.isAuthenticated) {
+          setUser({ username: response.username });
+        } else {
+          setUser(null);
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        setUser(null);
+        setAuthError('Authentication check failed');
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
+    checkAuthStatus();
+  }, []);
+
+  // Update local storage when user changes
   useEffect(() => {
     if (user) {
       localStorage.setItem('user', JSON.stringify(user));
@@ -22,18 +39,31 @@ export const AuthProvider = ({ children }) => {
     }
   }, [user]);
 
-  const login = (userData, token) => {
+  // Login function
+  const login = (userData) => {
     setUser(userData);
-    setToken(token);
+    setAuthError(null);
   };
 
-  const logout = () => {
-    setUser(null);
-    setToken(null);
+  // Logout function
+  const logout = async () => {
+    try {
+      await authService.logout();
+      setUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+      setAuthError('Logout failed');
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      isLoading, 
+      authError,
+      login, 
+      logout 
+    }}>
       {children}
     </AuthContext.Provider>
   );

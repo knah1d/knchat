@@ -1,40 +1,45 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Container, Paper, TextField, Button, Typography, Box } from '@mui/material';
-import axios from 'axios';
+import { 
+  Container, 
+  Paper, 
+  TextField, 
+  Button, 
+  Typography, 
+  Box, 
+  Alert,
+  CircularProgress 
+} from '@mui/material';
 import { useAuth } from '../context/AuthContext';
-import { getApiUrl, API_CONFIG } from '../config';
+import { authService } from '../services/api';
 
 const Register = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
 
+    setIsLoading(true);
     try {
-      const response = await axios.post(
-        getApiUrl('api/register'),
-        { username, password },
-        API_CONFIG
-      );
-      
-      login(
-        { userId: response.data.userId, username: response.data.username },
-        response.data.token
-      );
+      const response = await authService.register(username, password);
+      login({ username: response.username });
       navigate('/');
     } catch (error) {
-      setError(error.response?.data?.message || 'An error occurred');
+      setError(error.message || 'Registration failed. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -42,59 +47,133 @@ const Register = () => {
     <Container component="main" maxWidth="xs">
       <Box
         sx={{
-          marginTop: 8,
+          height: '100vh',
           display: 'flex',
           flexDirection: 'column',
+          justifyContent: 'center',
           alignItems: 'center',
         }}
       >
-        <Paper elevation={3} sx={{ padding: 4, width: '100%' }}>
-          <Typography component="h1" variant="h5" align="center" gutterBottom>
-            Register
+        <Paper 
+          elevation={6} 
+          sx={{ 
+            p: 4, 
+            width: '100%',
+            borderRadius: 3,
+            background: 'linear-gradient(145deg, #1a2027 0%, #121212 100%)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
+          }}
+        >
+          <Typography 
+            component="h1" 
+            variant="h4" 
+            gutterBottom 
+            align="center"
+            sx={{ 
+              fontWeight: 600,
+              background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent'
+            }}
+          >
+            Create Account
           </Typography>
+          
+          <Typography 
+            variant="subtitle1" 
+            align="center" 
+            sx={{ mb: 4, color: 'text.secondary' }}
+          >
+            Register to start chatting
+          </Typography>
+
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+
           <form onSubmit={handleSubmit}>
             <TextField
-              margin="normal"
-              required
               fullWidth
-              label="Username"
+              variant="outlined"
+              placeholder="Username"
+              disabled={isLoading}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              sx={{ 
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                  '&:hover fieldset': {
+                    borderColor: 'primary.main',
+                  },
+                },
+              }}
             />
             <TextField
-              margin="normal"
-              required
               fullWidth
-              label="Password"
+              variant="outlined"
               type="password"
+              placeholder="Password"
+              disabled={isLoading}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              sx={{ 
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                  '&:hover fieldset': {
+                    borderColor: 'primary.main',
+                  },
+                },
+              }}
             />
             <TextField
-              margin="normal"
-              required
               fullWidth
-              label="Confirm Password"
+              variant="outlined"
               type="password"
+              placeholder="Confirm Password"
+              disabled={isLoading}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
+              sx={{ 
+                mb: 3,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                  '&:hover fieldset': {
+                    borderColor: 'primary.main',
+                  },
+                },
+              }}
             />
-            {error && (
-              <Typography color="error" align="center" sx={{ mt: 2 }}>
-                {error}
-              </Typography>
-            )}
             <Button
               type="submit"
               fullWidth
               variant="contained"
-              sx={{ mt: 3, mb: 2 }}
+              disabled={isLoading}
+              sx={{
+                py: 1.5,
+                borderRadius: 2,
+                background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
+                boxShadow: '0 3px 5px 2px rgba(33, 203, 243, .3)',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #1976D2 30%, #1CB5E0 90%)',
+                },
+                mb: 2
+              }}
             >
-              Register
+              {isLoading ? <CircularProgress size={24} color="inherit" /> : 'Register'}
             </Button>
-            <Typography align="center">
+            <Typography align="center" color="text.secondary">
               Already have an account?{' '}
-              <Link to="/login" style={{ textDecoration: 'none' }}>
+              <Link 
+                to="/login" 
+                style={{ 
+                  textDecoration: 'none',
+                  color: '#2196F3'
+                }}
+              >
                 Login
               </Link>
             </Typography>

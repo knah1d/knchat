@@ -1,14 +1,36 @@
 {
-  "name": "mern-chat",
+  "name": "knchat",
   "version": "1.0.0",
-  "description": "MERN Chat Application",
+  "description": "Real-time MERN Chat Application",
   "main": "./backend/server.js",
   "scripts": {
     "start": "node ./backend/server.js",
     "install-backend": "cd backend && npm install",
-    "postinstall": "npm run install-backend"
+    "install-frontend": "cd frontend && npm install",
+    "postinstall": "npm run install-backend && npm run install-frontend",
+    "dev": "concurrently \"cd backend && npm run dev\" \"cd frontend && npm start\"",
+    "build": "cd frontend && npm run build",
+    "test": "echo \"No tests configured\""
   },
   "engines": {
     "node": "18.x"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/knchat.git"
+  },
+  "keywords": [
+    "chat",
+    "mern",
+    "socket.io",
+    "react",
+    "express",
+    "mongodb",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
-} 
+}
