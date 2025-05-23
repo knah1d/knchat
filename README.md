@@ -156,9 +156,6 @@ For production deployment, set the following environment variables:
 - **Socket.IO Client:** Real-time communication
 - **Axios:** HTTP client
 
-## License
-
-[MIT](LICENSE)
 
 ## Contributing
 
